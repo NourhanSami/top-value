@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@200..1000&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* الخلفيات */
+    --background: 220 20% 97%; /* #F3F4F7 */
+    --foreground: 215 25% 20%; /* #283347 */
+
+    /* البطاقات */
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 215 25% 20%;
+
+    /* اللون الرئيسي */
+    --primary: 210 50% 25%; /* #203F66 */
+    --primary-foreground: 0 0% 100%;
+
+    /* الثانوي */
+    --secondary: 210 15% 92%; /* #E5E9EF */
+    --secondary-foreground: 215 25% 25%;
+
+    /* مكتوم */
+    --muted: 210 15% 95%; /* #EEF0F4 */
+    --muted-foreground: 215 15% 50%; /* #6B7A93 */
+
+    /* تمييز */
+    --accent: 210 60% 92%; /* #D4E4F7 */
+    --accent-foreground: 210 50% 30%;
+
+    /* تدمير */
+    --destructive: 0 70% 55%; /* #E84040 */
+    --destructive-foreground: 0 0% 100%;
+
+    /* نجاح */
+    --success: 145 60% 40%; /* #1A9E5C */
+    --success-foreground: 0 0% 100%;
+    --success-light: 145 50% 92%; /* #D4F5E5 */
+
+    /* تحذير */
+    --warning: 35 90% 50%; /* #F59A0A */
+    --warning-foreground: 0 0% 100%;
+    --warning-light: 35 80% 92%; /* #FEF3D4 */
+
+    /* معلومات */
+    --info: 200 80% 50%; /* #0AACDC */
+    --info-foreground: 0 0% 100%;
+    --info-light: 200 70% 92%; /* #D4F3FC */
+
+    /* حدود */
+    --border: 210 20% 90%; /* #DEE3EC */
+    --input: 210 20% 90%;
+    --ring: 210 50% 40%;
+
+    /* الشريط الجانبي */
+    --sidebar-background: 210 50% 25%; /* #203F66 */
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-accent: 210 45% 35%; /* #2D5A8E */
+    --sidebar-border: 210 45% 30%; /* #264D7A */
+    --sidebar-ring: 0 0% 100%;
+
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-cairo;
+    direction: rtl;
+  }
+}
+
+@layer utilities {
+  .flat-card {
+    @apply bg-card rounded-2xl border border-border shadow-flat;
+  }
+
+  .hover-lift {
+    @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-flat-md;
+  }
+
+  .font-cairo {
+    font-family: 'Cairo', sans-serif;
+  }
+}
