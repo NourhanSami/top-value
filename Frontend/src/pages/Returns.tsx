@@ -1,358 +1,418 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  Search,
-  Plus,
-  Filter,
-  MoreVertical,
-  Edit,
-  Trash2,
-  RotateCcw,
-  DollarSign,
-  Package,
-  AlertCircle,
-  Calendar,
+  Search, Plus, RotateCcw, DollarSign, Package, Calendar, Eye, X, Loader2, CheckCircle,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
-import { saleService } from "@/services/api.service"
+import api from "@/lib/api"
+import toast from "react-hot-toast"
+
+interface ReturnItem {
+  productId: number
+  quantity: number
+  unitPrice: number
+  product?: { id: number; name: string }
+}
 
 interface SaleReturn {
   id: number
-  sale_id: number
-  sale: {
-    id: number
-    invoice_number: string
-  }
-  product_id: number
-  product: {
-    id: number
-    name: string
-  }
-  quantity: number
-  refund_amount: number
-  refund_method: "cash" | "credit"
+  returnNumber: string
+  saleId: number
+  sale: { id: number; invoiceNumber: string }
+  userId: number
+  user: { id: number; name: string }
+  branch: { id: number; name: string }
+  returnDate: string
   reason: string
-  return_type: "single" | "full_invoice"
-  created_at: string
-  updated_at: string
+  refundMethod: "cash" | "credit"
+  totalRefund: number
+  notes?: string
+  items: Array<{
+    id: number
+    product: { id: number; name: string; sku: string }
+    quantity: number
+    unitPrice: number
+    totalAmount: number
+  }>
+  createdAt: string
 }
 
-type RefundMethodFilter = "all" | "cash" | "credit"
+interface Sale {
+  id: number
+  invoiceNumber: string
+  totalAmount: number
+  items: Array<{
+    id: number
+    productId: number
+    product: { id: number; name: string; sku: string }
+    quantity: number
+    unitPrice: number
+    totalAmount: number
+  }>
+}
+
+const returnsApi = {
+  getAll: (params: any) => api.get('/returns', { params }).then(r => r.data),
+  getStats: () => api.get('/returns/statistics').then(r => r.data),
+  create: (data: any) => api.post('/returns', data).then(r => r.data),
+}
+
+const salesApi = {
+  getById: (id: number) => api.get(`/sales/${id}`).then(r => r.data),
+}
 
 export default function Returns() {
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState("")
-  const [refundMethodFilter, setRefundMethodFilter] = useState<RefundMethodFilter>("all")
   const [currentPage, setCurrentPage] = useState(1)
-  const [showReturnDialog, setShowReturnDialog] = useState(false)
+  const [showDialog, setShowDialog] = useState(false)
+  const [viewReturn, setViewReturn] = useState<SaleReturn | null>(null)
 
-  // Fetch returns - using sales endpoint for now
+  // New return form state
+  const [invoiceInput, setInvoiceInput] = useState("")
+  const [foundSale, setFoundSale] = useState<Sale | null>(null)
+  const [searchingSale, setSearchingSale] = useState(false)
+  const [selectedItems, setSelectedItems] = useState<ReturnItem[]>([])
+  const [reason, setReason] = useState("")
+  const [refundMethod, setRefundMethod] = useState<"cash" | "credit">("cash")
+  const [notes, setNotes] = useState("")
+
   const { data: returnsResponse, isLoading } = useQuery({
-    queryKey: ["returns", searchTerm, refundMethodFilter, currentPage],
-    queryFn: () => saleService.getAll({
-      search: searchTerm || undefined,
-      status: "returned",
-      page: currentPage,
-      limit: 50,
-    }),
+    queryKey: ["returns", searchTerm, currentPage],
+    queryFn: () => returnsApi.getAll({ search: searchTerm || undefined, page: currentPage, limit: 20 }),
   })
 
-  // Fetch statistics
   const { data: statsResponse } = useQuery({
     queryKey: ["returns", "statistics"],
-    queryFn: () => saleService.getStatistics({ type: "returns" }),
+    queryFn: returnsApi.getStats,
   })
+
+  const createMutation = useMutation({
+    mutationFn: returnsApi.create,
+    onSuccess: () => {
+      toast.success("تم إنشاء المرتجع وتحديث المخزون بنجاح")
+      queryClient.invalidateQueries({ queryKey: ["returns"] })
+      queryClient.invalidateQueries({ queryKey: ["products"] })
+      resetDialog()
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء إنشاء المرتجع")
+    },
+  })
+
+  const resetDialog = () => {
+    setShowDialog(false)
+    setInvoiceInput("")
+    setFoundSale(null)
+    setSelectedItems([])
+    setReason("")
+    setRefundMethod("cash")
+    setNotes("")
+  }
+
+  const searchSale = async () => {
+    if (!invoiceInput.trim()) return
+    setSearchingSale(true)
+    try {
+      const res = await api.get(`/sales/invoice/${invoiceInput.trim()}`)
+      setFoundSale(res.data.data)
+      setSelectedItems(
+        res.data.data.items.map((i: any) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice),
+          product: i.product,
+        }))
+      )
+    } catch {
+      toast.error("لم يتم العثور على الفاتورة")
+      setFoundSale(null)
+    } finally {
+      setSearchingSale(false)
+    }
+  }
+
+  const handleSubmit = () => {
+    if (!foundSale) return toast.error("ابحث عن فاتورة أولاً")
+    if (!reason.trim()) return toast.error("يجب إدخال سبب الإرجاع")
+    const items = selectedItems.filter(i => i.quantity > 0)
+    if (!items.length) return toast.error("حدد منتجاً واحداً على الأقل بكمية أكبر من صفر")
+    createMutation.mutate({
+      saleId: foundSale.id,
+      branchId: 1,
+      reason,
+      refundMethod,
+      notes,
+      items: items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+    })
+  }
 
   const returns = returnsResponse?.data || []
   const stats = statsResponse?.data
-
-  const getRefundMethodLabel = (method: string) => {
-    return method === "cash" ? "نقدي" : "رصيد"
-  }
-
-  const getReturnTypeLabel = (type: string) => {
-    return type === "single" ? "منتج واحد" : "فاتورة كاملة"
-  }
+  const pagination = returnsResponse?.pagination
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="إجمالي المرتجعات"
-          value={stats?.total || returns.length}
-          icon={RotateCcw}
-          variant="primary"
-        />
-        <StatCard
-          title="قيمة المرتجعات"
-          value={formatCurrency(stats?.total_amount || 0)}
-          icon={DollarSign}
-          variant="warning"
-        />
-        <StatCard
-          title="مرتجعات نقدية"
-          value={formatCurrency(stats?.cash_refunds || 0)}
-          icon={DollarSign}
-          variant="success"
-        />
-        <StatCard
-          title="مرتجعات رصيد"
-          value={formatCurrency(stats?.credit_refunds || 0)}
-          icon={Package}
-          variant="info"
-        />
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard title="إجمالي المرتجعات" value={stats?.total || 0} icon={RotateCcw} change={{ value: 0, label: "مرتجع" }} />
+        <StatCard title="إجمالي المبالغ المستردة" value={formatCurrency(Number(stats?.total_amount || 0))} icon={DollarSign} change={{ value: 0, label: "ر.س" }} />
+        <StatCard title="استرداد نقدي" value={formatCurrency(Number(stats?.cash_refunds || 0))} icon={Package} change={{ value: 0, label: "نقدي" }} />
+        <StatCard title="استرداد رصيد" value={formatCurrency(Number(stats?.credit_refunds || 0))} icon={Calendar} change={{ value: 0, label: "رصيد" }} />
       </div>
 
-      {/* Toolbar */}
-      <div className="flat-card p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          {/* Search */}
-          <div className="flex-1 min-w-[300px]">
-            <div className="relative">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="البحث برقم الفاتورة أو اسم المنتج..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-10 pr-11 pl-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-          </div>
+      {/* Header + Actions */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">المرتجعات</h1>
+          <p className="text-sm text-muted-foreground mt-1">إدارة مرتجعات المبيعات</p>
+        </div>
+        <button
+          onClick={() => setShowDialog(true)}
+          className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="text-sm font-medium">إضافة مرتجع</span>
+        </button>
+      </div>
 
-          {/* Refund Method Filter */}
-          <select
-            value={refundMethodFilter}
-            onChange={(e) => setRefundMethodFilter(e.target.value as RefundMethodFilter)}
-            className="h-10 px-4 bg-card border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="all">جميع طرق الاسترجاع</option>
-            <option value="cash">نقدي</option>
-            <option value="credit">رصيد</option>
-          </select>
-
-          {/* Add Return */}
-          <button 
-            onClick={() => setShowReturnDialog(true)}
-            className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="text-sm font-medium">مرتجع جديد</span>
-          </button>
+      {/* Search */}
+      <div className="bg-card rounded-2xl p-4 border border-border">
+        <div className="relative max-w-md">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="بحث برقم المرتجع..."
+            value={searchTerm}
+            onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1) }}
+            className="w-full pr-10 pl-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
         </div>
       </div>
 
-      {/* Returns Table */}
-      <div className="flat-card overflow-hidden">
+      {/* Table */}
+      <div className="bg-card rounded-2xl border border-border overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="flex items-center justify-center p-12">
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
         ) : returns.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <RotateCcw className="w-16 h-16 text-muted-foreground mb-4 opacity-50" />
-            <p className="text-foreground font-semibold mb-2">لا توجد مرتجعات</p>
-            <p className="text-sm text-muted-foreground">ابدأ بإضافة مرتجع جديد</p>
+          <div className="text-center py-16 text-muted-foreground">
+            <RotateCcw className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p>لا توجد مرتجعات حتى الآن</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    رقم الفاتورة
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    المنتج
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    الكمية
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    المبلغ المسترجع
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    طريقة الاسترجاع
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    نوع المرتجع
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    السبب
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    التاريخ
-                  </th>
-                  <th className="text-right text-sm font-medium text-muted-foreground py-3 px-4">
-                    إجراءات
-                  </th>
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  {["رقم المرتجع", "الفاتورة الأصلية", "التاريخ", "السبب", "طريقة الاسترداد", "المبلغ", "إجراءات"].map(h => (
+                    <th key={h} className="px-4 py-3 text-right font-medium text-muted-foreground">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {/* Placeholder data - replace with actual data */}
-                <tr className="border-b border-border hover:bg-muted/50 transition-colors">
-                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
-                    <AlertCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>قريباً - سيتم عرض المرتجعات هنا</p>
-                  </td>
-                </tr>
+                {returns.map((ret: SaleReturn) => (
+                  <tr key={ret.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-mono font-medium text-primary">{ret.returnNumber}</td>
+                    <td className="px-4 py-3 font-mono">{ret.sale?.invoiceNumber}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatDate(ret.returnDate)}</td>
+                    <td className="px-4 py-3 max-w-xs truncate">{ret.reason}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn("px-2 py-0.5 rounded-lg text-xs font-medium", ret.refundMethod === "cash" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700")}>
+                        {ret.refundMethod === "cash" ? "نقدي" : "رصيد"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-destructive">{formatCurrency(Number(ret.totalRefund))}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => setViewReturn(ret)} className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+                        <Eye className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+            <span className="text-sm text-muted-foreground">إجمالي: {pagination.total}</span>
+            <div className="flex gap-2">
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-border text-sm disabled:opacity-40">السابق</button>
+              <span className="px-3 py-1 text-sm">{currentPage} / {pagination.totalPages}</span>
+              <button disabled={currentPage === pagination.totalPages} onClick={() => setCurrentPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-border text-sm disabled:opacity-40">التالي</button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Return Dialog */}
-      {showReturnDialog && (
-        <ReturnDialog onClose={() => setShowReturnDialog(false)} />
+      {/* Create Return Dialog */}
+      {showDialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-lg font-bold">إضافة مرتجع جديد</h2>
+              <button onClick={resetDialog} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Invoice Search */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">رقم الفاتورة الأصلية</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={invoiceInput}
+                    onChange={e => setInvoiceInput(e.target.value)}
+                    placeholder="مثال: INV-20260718-0001"
+                    className="flex-1 px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
+                    onKeyDown={e => e.key === "Enter" && searchSale()}
+                  />
+                  <button
+                    onClick={searchSale}
+                    disabled={searchingSale}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90 flex items-center gap-2"
+                  >
+                    {searchingSale ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                    بحث
+                  </button>
+                </div>
+              </div>
+
+              {foundSale && (
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-green-700">فاتورة: <strong>{foundSale.invoiceNumber}</strong> — الإجمالي: {formatCurrency(Number(foundSale.totalAmount))}</span>
+                  </div>
+
+                  {/* Items */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">المنتجات المرتجعة</label>
+                    <div className="space-y-2">
+                      {selectedItems.map((item, i) => (
+                        <div key={item.productId} className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl">
+                          <span className="flex-1 text-sm font-medium">{item.product?.name}</span>
+                          <span className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice)} / وحدة</span>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-muted-foreground">الكمية:</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={foundSale.items[i]?.quantity}
+                              value={item.quantity}
+                              onChange={e => {
+                                const newItems = [...selectedItems]
+                                newItems[i].quantity = parseInt(e.target.value) || 0
+                                setSelectedItems(newItems)
+                              }}
+                              className="w-16 px-2 py-1 border border-border rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5">سبب الإرجاع <span className="text-destructive">*</span></label>
+                      <input
+                        type="text"
+                        value={reason}
+                        onChange={e => setReason(e.target.value)}
+                        placeholder="منتج تالف / غير مطابق..."
+                        className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5">طريقة الاسترداد</label>
+                      <select
+                        value={refundMethod}
+                        onChange={e => setRefundMethod(e.target.value as "cash" | "credit")}
+                        className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none bg-background"
+                      >
+                        <option value="cash">نقدي</option>
+                        <option value="credit">إضافة لرصيد العميل</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">ملاحظات (اختياري)</label>
+                    <textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background resize-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-sm font-semibold">
+                      إجمالي الاسترداد: <span className="text-destructive">{formatCurrency(selectedItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0))}</span>
+                    </span>
+                    <div className="flex gap-3">
+                      <button onClick={resetDialog} className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted">إلغاء</button>
+                      <button
+                        onClick={handleSubmit}
+                        disabled={createMutation.isPending}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                        تأكيد المرتجع
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
-    </div>
-  )
-}
 
-interface ReturnDialogProps {
-  onClose: () => void
-}
-
-function ReturnDialog({ onClose }: ReturnDialogProps) {
-  const [invoiceNumber, setInvoiceNumber] = useState("")
-  const [returnType, setReturnType] = useState<"single" | "full_invoice">("single")
-  const [refundMethod, setRefundMethod] = useState<"cash" | "credit">("cash")
-  const [reason, setReason] = useState("")
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // TODO: Implement return logic
-    alert("سيتم تنفيذ المرتجع قريباً")
-    onClose()
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="w-full max-w-2xl flat-card p-6 animate-fade-in max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold text-foreground mb-6">مرتجع جديد</h2>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Invoice Number */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              رقم الفاتورة *
-            </label>
-            <input
-              type="text"
-              value={invoiceNumber}
-              onChange={(e) => setInvoiceNumber(e.target.value)}
-              placeholder="أدخل رقم الفاتورة"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              required
-            />
-          </div>
-
-          {/* Return Type */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              نوع المرتجع *
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setReturnType("single")}
-                className={cn(
-                  "p-4 rounded-xl border-2 transition-all",
-                  returnType === "single"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                )}
-              >
-                <Package className="w-6 h-6 mx-auto mb-2 text-primary" />
-                <p className="text-sm font-semibold">منتج واحد</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setReturnType("full_invoice")}
-                className={cn(
-                  "p-4 rounded-xl border-2 transition-all",
-                  returnType === "full_invoice"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                )}
-              >
-                <RotateCcw className="w-6 h-6 mx-auto mb-2 text-primary" />
-                <p className="text-sm font-semibold">فاتورة كاملة</p>
-              </button>
+      {/* View Return Dialog */}
+      {viewReturn && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-lg font-bold">تفاصيل المرتجع — {viewReturn.returnNumber}</h2>
+              <button onClick={() => setViewReturn(null)} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6 space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div><span className="text-muted-foreground">الفاتورة الأصلية:</span> <strong>{viewReturn.sale?.invoiceNumber}</strong></div>
+                <div><span className="text-muted-foreground">التاريخ:</span> <strong>{formatDate(viewReturn.returnDate)}</strong></div>
+                <div><span className="text-muted-foreground">طريقة الاسترداد:</span> <strong>{viewReturn.refundMethod === "cash" ? "نقدي" : "رصيد"}</strong></div>
+                <div><span className="text-muted-foreground">إجمالي الاسترداد:</span> <strong className="text-destructive">{formatCurrency(Number(viewReturn.totalRefund))}</strong></div>
+                <div className="col-span-2"><span className="text-muted-foreground">السبب:</span> <strong>{viewReturn.reason}</strong></div>
+                {viewReturn.notes && <div className="col-span-2"><span className="text-muted-foreground">ملاحظات:</span> <strong>{viewReturn.notes}</strong></div>}
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2">المنتجات المرتجعة</h3>
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      {["المنتج", "الكمية", "السعر", "الإجمالي"].map(h => <th key={h} className="px-3 py-2 text-right font-medium">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewReturn.items.map(item => (
+                      <tr key={item.id} className="border-t border-border">
+                        <td className="px-3 py-2">{item.product.name}</td>
+                        <td className="px-3 py-2">{item.quantity}</td>
+                        <td className="px-3 py-2">{formatCurrency(Number(item.unitPrice))}</td>
+                        <td className="px-3 py-2 font-medium">{formatCurrency(Number(item.totalAmount))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-
-          {/* Refund Method */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              طريقة الاسترجاع *
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setRefundMethod("cash")}
-                className={cn(
-                  "p-4 rounded-xl border-2 transition-all",
-                  refundMethod === "cash"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                )}
-              >
-                <DollarSign className="w-6 h-6 mx-auto mb-2 text-primary" />
-                <p className="text-sm font-semibold">استرجاع نقدي</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setRefundMethod("credit")}
-                className={cn(
-                  "p-4 rounded-xl border-2 transition-all",
-                  refundMethod === "credit"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                )}
-              >
-                <Package className="w-6 h-6 mx-auto mb-2 text-primary" />
-                <p className="text-sm font-semibold">رصيد للعميل</p>
-              </button>
-            </div>
-          </div>
-
-          {/* Reason */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              سبب الإرجاع *
-            </label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="اذكر سبب الإرجاع..."
-              rows={3}
-              className="w-full px-4 py-3 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              required
-            />
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 h-12 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-colors"
-            >
-              إلغاء
-            </button>
-            <button
-              type="submit"
-              className="flex-1 h-12 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors"
-            >
-              تأكيد المرتجع
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

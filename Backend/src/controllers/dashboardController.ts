@@ -1,7 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database';
 
-const prisma = new PrismaClient();
+const toNum = (v: any): number => {
+  if (v == null) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'object' && typeof v.toNumber === 'function') return v.toNumber();
+  return Number(v) || 0;
+};
 
 /**
  * @route   GET /api/dashboard
@@ -11,62 +16,57 @@ const prisma = new PrismaClient();
 export const getDashboardStatistics = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { branchId } = req.query;
-    const userId = (req as any).user.id;
 
     const now = new Date();
-    const todayStart = new Date(now.setHours(0, 0, 0, 0));
-    const weekAgo = new Date(now.setDate(now.getDate() - 7));
-    const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const weekAgo = new Date(todayStart);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    const previousMonthEnd = new Date(monthStart.getTime() - 1);
 
     const where: any = {
       deletedAt: null,
       ...(branchId && { branchId: parseInt(branchId as string) })
     };
 
-    // Sales statistics
-    const [todaySales, monthSales, previousMonthSales] = await Promise.all([
+    const [todaySales, monthSales, previousMonthSales, allTimeSales] = await Promise.all([
       prisma.sale.aggregate({
-        where: {
-          ...where,
-          saleDate: { gte: todayStart },
-          status: 'completed'
-        },
+        where: { ...where, saleDate: { gte: todayStart }, status: 'completed' },
+        _sum: { totalAmount: true },
+        _count: true
+      }),
+      prisma.sale.aggregate({
+        where: { ...where, saleDate: { gte: monthStart }, status: 'completed' },
         _sum: { totalAmount: true },
         _count: true
       }),
       prisma.sale.aggregate({
         where: {
           ...where,
-          saleDate: { gte: monthAgo },
+          saleDate: { gte: previousMonthStart, lte: previousMonthEnd },
           status: 'completed'
         },
         _sum: { totalAmount: true },
         _count: true
       }),
       prisma.sale.aggregate({
-        where: {
-          ...where,
-          saleDate: {
-            gte: new Date(monthAgo.getTime() - (now.getTime() - monthAgo.getTime())),
-            lt: monthAgo
-          },
-          status: 'completed'
-        },
+        where: { ...where, status: 'completed' },
         _sum: { totalAmount: true },
         _count: true
       })
     ]);
 
-    // Calculate sales change
-    const salesChange = previousMonthSales._sum.totalAmount?.toNumber() || 0 > 0
-      ? ((((monthSales._sum.totalAmount?.toNumber() || 0) - (previousMonthSales._sum.totalAmount?.toNumber() || 0)) / (previousMonthSales._sum.totalAmount?.toNumber() || 1)) * 100)
-      : 0;
+    const monthTotal = toNum(monthSales._sum.totalAmount);
+    const prevMonthTotal = toNum(previousMonthSales._sum.totalAmount);
+    const salesChange = prevMonthTotal > 0
+      ? ((monthTotal - prevMonthTotal) / prevMonthTotal) * 100
+      : (monthTotal > 0 ? 100 : 0);
 
     const ordersChange = previousMonthSales._count > 0
-      ? (((monthSales._count - previousMonthSales._count) / previousMonthSales._count) * 100)
-      : 0;
+      ? ((monthSales._count - previousMonthSales._count) / previousMonthSales._count) * 100
+      : (monthSales._count > 0 ? 100 : 0);
 
-    // Product statistics
     const products = await prisma.product.findMany({
       where: { isActive: true, deletedAt: null },
       select: { stockQuantity: true, minStockLevel: true }
@@ -75,17 +75,10 @@ export const getDashboardStatistics = async (req: Request, res: Response, next: 
     const lowStockProducts = products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= p.minStockLevel).length;
     const outOfStockProducts = products.filter(p => p.stockQuantity === 0).length;
 
-    // Customer statistics
     const [totalCustomers, newCustomersThisWeek, vipCustomers] = await Promise.all([
+      prisma.customer.count({ where: { isActive: true, deletedAt: null } }),
       prisma.customer.count({
-        where: { isActive: true, deletedAt: null }
-      }),
-      prisma.customer.count({
-        where: {
-          createdAt: { gte: weekAgo },
-          isActive: true,
-          deletedAt: null
-        }
+        where: { createdAt: { gte: weekAgo }, isActive: true, deletedAt: null }
       }),
       prisma.customer.count({
         where: {
@@ -96,33 +89,20 @@ export const getDashboardStatistics = async (req: Request, res: Response, next: 
       })
     ]);
 
-    // Recent sales
     const recentSales = await prisma.sale.findMany({
-      where: {
-        ...where,
-        status: 'completed'
-      },
+      where: { ...where, status: 'completed' },
       take: 10,
       orderBy: { saleDate: 'desc' },
       include: {
-        customer: {
-          select: { id: true, name: true, phone: true }
-        },
-        user: {
-          select: { id: true, name: true }
-        }
+        customer: { select: { id: true, name: true, phone: true } },
+        user: { select: { id: true, name: true } }
       }
     });
 
-    // Top products (most sold this month)
     const topProducts = await prisma.saleItem.groupBy({
       by: ['productId'],
       where: {
-        sale: {
-          ...where,
-          saleDate: { gte: monthAgo },
-          status: 'completed'
-        }
+        sale: { ...where, saleDate: { gte: monthStart }, status: 'completed' }
       },
       _sum: { quantity: true, totalAmount: true },
       orderBy: { _sum: { quantity: 'desc' } },
@@ -134,24 +114,18 @@ export const getDashboardStatistics = async (req: Request, res: Response, next: 
       where: { id: { in: topProductIds } },
       select: { id: true, name: true, sku: true, sellingPrice: true }
     });
-
     const productMap = new Map(productDetails.map(p => [p.id, p]));
 
     const topProductsWithDetails = topProducts.map(p => ({
       product: productMap.get(p.productId),
-      quantitySold: p._sum.quantity || 0,
-      totalRevenue: p._sum.totalAmount || 0
+      quantitySold: toNum(p._sum.quantity),
+      totalRevenue: toNum(p._sum.totalAmount)
     }));
 
-    // Pending approvals (expenses)
     const pendingExpenses = await prisma.expense.count({
-      where: {
-        ...where,
-        status: 'pending'
-      }
-    });
+      where: { ...where, status: 'pending' }
+    }).catch(() => 0);
 
-    // Low stock alerts - products where quantity is less than or equal to minimum level
     const lowStockAlertsRaw = await prisma.$queryRaw<Array<{
       id: number;
       name: string;
@@ -167,75 +141,56 @@ export const getDashboardStatistics = async (req: Request, res: Response, next: 
       ORDER BY stock_quantity ASC
       LIMIT 10
     `;
-    
-    const lowStockAlerts = lowStockAlertsRaw;
 
-    // Revenue breakdown (cash vs credit)
     const revenueBreakdown = await prisma.sale.groupBy({
       by: ['paymentMethod'],
-      where: {
-        ...where,
-        saleDate: { gte: monthAgo },
-        status: 'completed'
-      },
+      where: { ...where, saleDate: { gte: monthStart }, status: 'completed' },
       _sum: { totalAmount: true }
     });
 
     res.json({
       success: true,
       data: {
-        // Sales Overview
         sales: {
-          today: todaySales._sum.totalAmount || 0,
-          thisMonth: monthSales._sum.totalAmount || 0,
+          today: toNum(todaySales._sum.totalAmount),
+          todayOrders: todaySales._count,
+          thisMonth: monthTotal,
+          allTime: toNum(allTimeSales._sum.totalAmount),
           salesChange: parseFloat(salesChange.toFixed(2)),
           totalOrders: monthSales._count,
+          allTimeOrders: allTimeSales._count,
           ordersChange: parseFloat(ordersChange.toFixed(2))
         },
-        
-        // Products Overview
         products: {
           total: products.length,
           lowStock: lowStockProducts,
           outOfStock: outOfStockProducts,
           needsReorder: lowStockProducts + outOfStockProducts
         },
-
-        // Customers Overview
         customers: {
           total: totalCustomers,
           newThisWeek: newCustomersThisWeek,
           vip: vipCustomers
         },
-
-        // Recent activity
         recentSales: recentSales.map(sale => ({
           id: sale.id,
           invoiceNumber: sale.invoiceNumber,
           customer: sale.customer,
-          totalAmount: sale.totalAmount,
+          totalAmount: toNum(sale.totalAmount),
           paymentMethod: sale.paymentMethod,
           saleDate: sale.saleDate,
           cashier: sale.user
         })),
-
-        // Top products
         topProducts: topProductsWithDetails,
-
-        // Alerts
         alerts: {
           pendingExpenses,
           lowStockCount: lowStockProducts,
           outOfStockCount: outOfStockProducts
         },
-
-        // Low stock details
-        lowStockAlerts,
-
-        // Revenue breakdown
+        lowStockAlerts: lowStockAlertsRaw,
         revenueBreakdown: revenueBreakdown.map(r => ({
           paymentMethod: r.paymentMethod,
-          amount: r._sum.totalAmount || 0
+          amount: toNum(r._sum.totalAmount)
         }))
       }
     });
@@ -252,67 +207,81 @@ export const getDashboardStatistics = async (req: Request, res: Response, next: 
 export const getChartData = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { period = 'week', branchId } = req.query;
-    
+
     const now = new Date();
+    now.setHours(23, 59, 59, 999);
     let startDate: Date;
-    let groupBy: 'day' | 'week' | 'month';
+    let groupBy: 'day' | 'month' = 'day';
 
     switch (period) {
       case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 6);
+        startDate.setHours(0, 0, 0, 0);
         groupBy = 'day';
         break;
       case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 29);
+        startDate.setHours(0, 0, 0, 0);
         groupBy = 'day';
         break;
       case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        startDate = new Date(now);
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        startDate.setHours(0, 0, 0, 0);
         groupBy = 'month';
         break;
       default:
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 6);
+        startDate.setHours(0, 0, 0, 0);
         groupBy = 'day';
     }
 
     const where: any = {
-      saleDate: { gte: startDate },
+      saleDate: { gte: startDate, lte: now },
       status: 'completed',
       deletedAt: null,
       ...(branchId && { branchId: parseInt(branchId as string) })
     };
 
-    // Get sales data
     const sales = await prisma.sale.findMany({
       where,
-      select: {
-        saleDate: true,
-        totalAmount: true
-      },
+      select: { saleDate: true, totalAmount: true },
       orderBy: { saleDate: 'asc' }
     });
 
-    // Group sales by date
-    const salesByDate = new Map<string, number>();
-    
+    const salesByKey = new Map<string, number>();
     sales.forEach(sale => {
-      const date = sale.saleDate.toISOString().split('T')[0];
-      const current = salesByDate.get(date) || 0;
-      salesByDate.set(date, current + sale.totalAmount.toNumber());
+      const d = sale.saleDate;
+      const key = groupBy === 'month'
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        : d.toISOString().split('T')[0];
+      salesByKey.set(key, (salesByKey.get(key) || 0) + toNum(sale.totalAmount));
     });
 
-    // Convert to array
-    const chartData = Array.from(salesByDate.entries()).map(([date, amount]) => ({
-      date,
-      amount
-    }));
+    const chartData: { date: string; amount: number }[] = [];
+    if (groupBy === 'month') {
+      const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      const endMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      while (cursor <= endMonth) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+        chartData.push({ date: key, amount: salesByKey.get(key) || 0 });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    } else {
+      const cursor = new Date(startDate);
+      while (cursor <= now) {
+        const key = cursor.toISOString().split('T')[0];
+        chartData.push({ date: key, amount: salesByKey.get(key) || 0 });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
 
     res.json({
       success: true,
-      data: {
-        period,
-        chartData
-      }
+      data: { period, chartData }
     });
   } catch (error) {
     next(error);

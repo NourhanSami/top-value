@@ -12,11 +12,14 @@ import {
   Trash2,
   Barcode,
   Package,
+  X,
+  Loader2,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency } from "@/lib/utils"
 import { productService } from "@/services/api.service"
 import type { Product } from "@/types"
+import toast from "react-hot-toast"
 
 type ViewMode = "table" | "grid"
 type StockFilter = "all" | "low" | "medium" | "available"
@@ -28,6 +31,11 @@ export default function Products() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("all")
   const [showFilterPopover, setShowFilterPopover] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [showAddDialog, setShowAddDialog] = useState(false)
+  const [addForm, setAddForm] = useState({
+    name: "", sku: "", barcode: "", sellingPrice: "", costPrice: "",
+    stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: ""
+  })
 
   // Fetch products
   const { data: productsResponse, isLoading, error } = useQuery({
@@ -64,6 +72,20 @@ export default function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] })
     },
+  })
+
+  // Add product mutation
+  const addMutation = useMutation({
+    mutationFn: (data: any) => productService.create(data),
+    onSuccess: () => {
+      toast.success("تم إضافة المنتج بنجاح")
+      queryClient.invalidateQueries({ queryKey: ["products"] })
+      setShowAddDialog(false)
+      setAddForm({ name: "", sku: "", barcode: "", sellingPrice: "", costPrice: "", stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: "" })
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء إضافة المنتج")
+    }
   })
 
   // Calculate stats
@@ -273,7 +295,9 @@ export default function Products() {
           </button>
 
           {/* Add Product */}
-          <button className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors">
+          <button
+            onClick={() => setShowAddDialog(true)}
+            className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors">
             <Plus className="w-4 h-4" />
             <span className="text-sm font-medium">إضافة منتج</span>
           </button>
@@ -473,6 +497,88 @@ export default function Products() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Add Product Dialog */}
+      {showAddDialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-lg font-bold text-foreground">إضافة منتج جديد</h2>
+              <button onClick={() => setShowAddDialog(false)} className="p-2 hover:bg-muted rounded-xl">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium mb-1.5">اسم المنتج <span className="text-destructive">*</span></label>
+                  <input type="text" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="اسم المنتج" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">رمز المنتج (SKU)</label>
+                  <input type="text" value={addForm.sku} onChange={e => setAddForm(f => ({ ...f, sku: e.target.value }))}
+                    placeholder="SKU-001" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">الباركود</label>
+                  <input type="text" value={addForm.barcode} onChange={e => setAddForm(f => ({ ...f, barcode: e.target.value }))}
+                    placeholder="1234567890" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">سعر البيع <span className="text-destructive">*</span></label>
+                  <input type="number" min="0" step="0.01" value={addForm.sellingPrice} onChange={e => setAddForm(f => ({ ...f, sellingPrice: e.target.value }))}
+                    placeholder="0.00" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">سعر التكلفة</label>
+                  <input type="number" min="0" step="0.01" value={addForm.costPrice} onChange={e => setAddForm(f => ({ ...f, costPrice: e.target.value }))}
+                    placeholder="0.00" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">الكمية الابتدائية</label>
+                  <input type="number" min="0" value={addForm.stockQuantity} onChange={e => setAddForm(f => ({ ...f, stockQuantity: e.target.value }))}
+                    placeholder="0" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">حد التنبيه المنخفض</label>
+                  <input type="number" min="0" value={addForm.minStockLevel} onChange={e => setAddForm(f => ({ ...f, minStockLevel: e.target.value }))}
+                    placeholder="5" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">وحدة القياس</label>
+                  <select value={addForm.unit} onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))}
+                    className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none bg-background">
+                    <option>قطعة</option><option>كيلو</option><option>لتر</option><option>متر</option><option>علبة</option><option>كرتون</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium mb-1.5">الوصف</label>
+                  <textarea value={addForm.description} onChange={e => setAddForm(f => ({ ...f, description: e.target.value }))}
+                    rows={2} placeholder="وصف المنتج (اختياري)"
+                    className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background resize-none" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setShowAddDialog(false)} className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted">إلغاء</button>
+                <button
+                  disabled={!addForm.name || !addForm.sellingPrice || addMutation.isPending}
+                  onClick={() => addMutation.mutate({
+                    name: addForm.name, sku: addForm.sku || undefined, barcode: addForm.barcode || undefined,
+                    sellingPrice: parseFloat(addForm.sellingPrice), costPrice: parseFloat(addForm.costPrice) || 0,
+                    stockQuantity: parseInt(addForm.stockQuantity) || 0, minStockLevel: parseInt(addForm.minStockLevel) || 5,
+                    unit: addForm.unit, description: addForm.description || undefined
+                  })}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {addMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  حفظ المنتج
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -75,6 +75,12 @@ model Branch {
   purchaseOrders         PurchaseOrder[]
   inventoryTransactions  InventoryTransaction[]
   expenses               Expense[]
+  saleReturns            SaleReturn[]
+  quotations             Quotation[]
+  paymentVouchers        PaymentVoucher[]
+  damagedItems           DamagedItem[]
+  transfersFrom          InventoryTransfer[]    @relation("TransferFrom")
+  transfersTo            InventoryTransfer[]    @relation("TransferTo")
 
   @@index([code])
   @@index([isActive])
@@ -106,6 +112,13 @@ model User {
   expensesApproved       Expense[]              @relation("ExpenseApprover")
   notifications          Notification[]
   activityLogs           ActivityLog[]
+  saleReturns            SaleReturn[]
+  quotations             Quotation[]
+  paymentVouchers        PaymentVoucher[]
+  attachments            Attachment[]
+  damagedItems           DamagedItem[]
+  damagedItemsApproved   DamagedItem[]          @relation("DamagedItemApprover")
+  inventoryTransfers     InventoryTransfer[]
 
   @@index([email])
   @@index([branchId])
@@ -174,6 +187,8 @@ model Supplier {
   
   products       Product[]
   purchaseOrders PurchaseOrder[]
+  paymentVouchers PaymentVoucher[]
+  paymentSchedules PaymentSchedule[]
 
   @@index([phone])
   @@index([isActive])
@@ -214,6 +229,10 @@ model Product {
   saleItems             SaleItem[]
   purchaseOrderItems    PurchaseOrderItem[]
   inventoryTransactions InventoryTransaction[]
+  saleReturnItems       SaleReturnItem[]
+  quotationItems        QuotationItem[]
+  damagedItems          DamagedItem[]
+  inventoryTransferItems InventoryTransferItem[]
 
   @@index([sku])
   @@index([barcode])
@@ -319,6 +338,9 @@ model Customer {
   
   addresses      CustomerAddress[]
   sales          Sale[]
+  quotations     Quotation[]
+  paymentVouchers PaymentVoucher[]
+  paymentSchedules PaymentSchedule[]
 
   @@index([phone])
   @@index([isActive])
@@ -372,6 +394,7 @@ model Sale {
   branch              Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
   user                User      @relation(fields: [userId], references: [id], onDelete: Restrict)
   items               SaleItem[]
+  returns             SaleReturn[]
 
   @@index([invoiceNumber])
   @@index([customerId])
@@ -549,5 +572,270 @@ model SystemSetting {
   @@index([group])
   @@index([isPublic])
   @@map("system_settings")
+}
+
+// ===================== SaleReturn (مرتجعات المبيعات) =====================
+model SaleReturn {
+  id             Int      @id @default(autoincrement())
+  returnNumber   String   @unique @map("return_number")
+  saleId         Int      @map("sale_id")
+  userId         Int      @map("user_id")
+  branchId       Int      @map("branch_id")
+  returnDate     DateTime @map("return_date")
+  reason         String
+  refundMethod   String   @default("cash") @map("refund_method")
+  totalRefund    Decimal  @default(0) @map("total_refund")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  sale           Sale       @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  user           User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  branch         Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  items          SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([returnDate])
+  @@map("sale_returns")
+}
+
+model SaleReturnItem {
+  id           Int        @id @default(autoincrement())
+  returnId     Int        @map("return_id")
+  productId    Int        @map("product_id")
+  quantity     Int
+  unitPrice    Decimal    @map("unit_price")
+  totalAmount  Decimal    @map("total_amount")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  saleReturn   SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([returnId])
+  @@index([productId])
+  @@map("sale_return_items")
+}
+
+// ===================== Quotation (عروض الأسعار) =====================
+model Quotation {
+  id              Int       @id @default(autoincrement())
+  quotationNumber String    @unique @map("quotation_number")
+  customerId      Int?      @map("customer_id")
+  branchId        Int       @map("branch_id")
+  userId          Int       @map("user_id")
+  quotationDate   DateTime  @map("quotation_date")
+  validUntil      DateTime? @map("valid_until")
+  status          String    @default("draft")
+  subtotal        Decimal   @default(0)
+  taxAmount       Decimal   @default(0) @map("tax_amount")
+  discountAmount  Decimal   @default(0) @map("discount_amount")
+  totalAmount     Decimal   @default(0) @map("total_amount")
+  notes           String?
+  terms           String?
+  convertedToSale Boolean   @default(false) @map("converted_to_sale")
+  saleId          Int?      @map("sale_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  branch          Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items           QuotationItem[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([quotationDate])
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id            Int       @id @default(autoincrement())
+  quotationId   Int       @map("quotation_id")
+  productId     Int       @map("product_id")
+  quantity      Int
+  unitPrice     Decimal   @map("unit_price")
+  discountRate  Decimal   @default(0) @map("discount_rate")
+  taxRate       Decimal   @default(0) @map("tax_rate")
+  totalAmount   Decimal   @map("total_amount")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  quotation     Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([quotationId])
+  @@index([productId])
+  @@map("quotation_items")
+}
+
+// ===================== PaymentVoucher (سندات القبض والدفع) =====================
+model PaymentVoucher {
+  id              Int       @id @default(autoincrement())
+  voucherNumber   String    @unique @map("voucher_number")
+  voucherType     String    @map("voucher_type")
+  customerId      Int?      @map("customer_id")
+  supplierId      Int?      @map("supplier_id")
+  branchId        Int       @map("branch_id")
+  userId          Int       @map("user_id")
+  bankAccountId   Int?      @map("bank_account_id")
+  amount          Decimal
+  paymentMethod   String    @default("cash") @map("payment_method")
+  referenceType   String?   @map("reference_type")
+  referenceId     Int?      @map("reference_id")
+  voucherDate     DateTime  @map("voucher_date")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  customer        Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  supplier        Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  branch          Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+
+  @@index([voucherType])
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([voucherDate])
+  @@map("payment_vouchers")
+}
+
+// ===================== PaymentSchedule (أقساط ومتابعة الديون) =====================
+model PaymentSchedule {
+  id            Int       @id @default(autoincrement())
+  customerId    Int?      @map("customer_id")
+  supplierId    Int?      @map("supplier_id")
+  saleId        Int?      @map("sale_id")
+  purchaseId    Int?      @map("purchase_id")
+  amount        Decimal
+  paidAmount    Decimal   @default(0) @map("paid_amount")
+  dueDate       DateTime  @map("due_date")
+  status        String    @default("pending")
+  notes         String?
+  paidAt        DateTime? @map("paid_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([dueDate])
+  @@index([status])
+  @@map("payment_schedules")
+}
+
+// ===================== BankAccount (حسابات بنكية) =====================
+model BankAccount {
+  id            Int       @id @default(autoincrement())
+  name          String
+  bankName      String    @map("bank_name")
+  accountNumber String    @map("account_number")
+  iban          String?
+  balance       Decimal   @default(0)
+  currency      String    @default("EGP")
+  isActive      Boolean   @default(true) @map("is_active")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  vouchers      PaymentVoucher[]
+
+  @@index([isActive])
+  @@map("bank_accounts")
+}
+
+// ===================== Attachment (مرفقات) =====================
+model Attachment {
+  id           Int      @id @default(autoincrement())
+  entityType   String   @map("entity_type")
+  entityId     Int      @map("entity_id")
+  fileName     String   @map("file_name")
+  filePath     String   @map("file_path")
+  fileType     String   @map("file_type")
+  fileSize     Int      @default(0) @map("file_size")
+  uploadedBy   Int      @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  uploader     User     @relation(fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId])
+  @@map("attachments")
+}
+
+// ===================== DamagedItem (الأصناف التالفة) =====================
+model DamagedItem {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  branchId     Int      @map("branch_id")
+  userId       Int      @map("user_id")
+  quantity     Int
+  lossAmount   Decimal  @default(0) @map("loss_amount")
+  reason       String
+  damageType   String   @default("damaged") @map("damage_type")
+  status       String   @default("pending")
+  approvedBy   Int?     @map("approved_by")
+  approvedAt   DateTime? @map("approved_at")
+  notes        String?
+  damagedAt    DateTime @map("damaged_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  approver     User?    @relation("DamagedItemApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([branchId])
+  @@index([status])
+  @@index([damagedAt])
+  @@map("damaged_items")
+}
+
+// ===================== InventoryTransfer (تحويل المخزون) =====================
+model InventoryTransfer {
+  id               Int       @id @default(autoincrement())
+  transferNumber   String    @unique @map("transfer_number")
+  fromBranchId     Int       @map("from_branch_id")
+  toBranchId       Int       @map("to_branch_id")
+  userId           Int       @map("user_id")
+  transferDate     DateTime  @map("transfer_date")
+  status           String    @default("pending")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  fromBranch       Branch    @relation("TransferFrom", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranch         Branch    @relation("TransferTo", fields: [toBranchId], references: [id], onDelete: Restrict)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items            InventoryTransferItem[]
+
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([status])
+  @@map("inventory_transfers")
+}
+
+model InventoryTransferItem {
+  id           Int               @id @default(autoincrement())
+  transferId   Int               @map("transfer_id")
+  productId    Int               @map("product_id")
+  quantity     Int
+  notes        String?
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  transfer     InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([transferId])
+  @@index([productId])
+  @@map("inventory_transfer_items")
 }
 

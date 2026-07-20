@@ -24,6 +24,7 @@ export default function POS() {
   const [showCustomerDialog, setShowCustomerDialog] = useState(false)
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>("cash")
+  const [discountPercent, setDiscountPercent] = useState(0)
 
   // Fetch products
   const { data: productsResponse } = useQuery({
@@ -152,7 +153,8 @@ export default function POS() {
   }
 
   const getTotalAmount = () => {
-    return cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
+    const total = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
+    return Math.round((total + Number.EPSILON) * 100) / 100
   }
 
   const clearCart = () => {
@@ -183,7 +185,7 @@ export default function POS() {
     // Calculate totals
     const subtotal = getTotalAmount()
     const taxAmount = 0
-    const discountAmount = 0
+    const discountAmount = parseFloat(((subtotal * discountPercent) / 100).toFixed(2))
     const totalAmount = subtotal + taxAmount - discountAmount
     const paidAmount = totalAmount
     const changeAmount = 0
@@ -396,12 +398,33 @@ export default function POS() {
 
           {/* Total */}
           <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">المجموع الفرعي</span>
+              <span className="text-sm font-medium">{formatCurrency(getTotalAmount())}</span>
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm text-muted-foreground">خصم %</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={discountPercent}
+                onChange={e => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
+                className="w-20 h-8 px-2 text-center bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            {discountPercent > 0 && (
+              <div className="flex items-center justify-between mb-2 text-destructive">
+                <span className="text-sm">الخصم ({discountPercent}%)</span>
+                <span className="text-sm font-medium">- {formatCurrency((getTotalAmount() * discountPercent) / 100)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between mb-4">
               <span className="text-lg font-semibold text-foreground">
                 الإجمالي
               </span>
               <span className="text-2xl font-bold text-primary">
-                {formatCurrency(getTotalAmount())}
+                {formatCurrency(getTotalAmount() - (getTotalAmount() * discountPercent) / 100)}
               </span>
             </div>
 

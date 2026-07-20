@@ -70,7 +70,7 @@ export default function Login() {
 
       navigate("/")
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || err.message || "فشل تسجيل الدخول"
+      const errorMessage = err.response?.data?.message || err.message || "فشل تسجيل الدخول. يرجى التحقق من البيانات."
       setError(errorMessage)
     } finally {
       setIsLoading(false)

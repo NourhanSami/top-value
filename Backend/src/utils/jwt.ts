@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { createError } from '../middlewares/errorHandler';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
@@ -30,7 +31,7 @@ export const verifyToken = (token: string): TokenPayload => {
   try {
     return jwt.verify(token, JWT_SECRET) as TokenPayload;
   } catch (error) {
-    throw new Error('Invalid or expired token');
+    throw createError('Invalid or expired token', 401);
   }
 };
 

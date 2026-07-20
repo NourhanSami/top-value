@@ -16,6 +16,8 @@ import {
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
+import api from "@/lib/api"
+import toast from "react-hot-toast"
 
 interface DamagedItem {
   id: number
@@ -55,24 +57,25 @@ export default function DamagedItems() {
   const [currentPage, setCurrentPage] = useState(1)
   const [showAddDialog, setShowAddDialog] = useState(false)
 
-  // Mock data - replace with actual API call
   const { data: itemsResponse, isLoading } = useQuery({
     queryKey: ["damaged-items", searchTerm, statusFilter, damageTypeFilter, currentPage],
-    queryFn: async () => {
-      // TODO: Replace with actual API call
-      return { data: [], total: 0 }
-    },
+    queryFn: () => api.get('/damaged-items', { params: { status: statusFilter !== "all" ? statusFilter : undefined, damageType: damageTypeFilter !== "all" ? damageTypeFilter : undefined, page: currentPage, limit: 20 } }).then(r => r.data),
+  })
+
+  const { data: statsResponse } = useQuery({
+    queryKey: ["damaged-items", "statistics"],
+    queryFn: () => api.get('/damaged-items/statistics').then(r => r.data),
+  })
+
+  const addMutation = useMutation({
+    mutationFn: (data: any) => api.post('/damaged-items', data).then(r => r.data),
+    onSuccess: () => { toast.success("تم تسجيل الهالك وخصمه من المخزون"); queryClient.invalidateQueries({ queryKey: ["damaged-items"] }); queryClient.invalidateQueries({ queryKey: ["products"] }); setShowAddDialog(false) },
+    onError: (e: any) => toast.error(e.response?.data?.message || "خطأ"),
   })
 
   const items = itemsResponse?.data || []
-
-  // Mock statistics
-  const stats = {
-    total: 0,
-    pending: 0,
-    approved: 0,
-    total_loss: 0,
-  }
+  const pagination = itemsResponse?.pagination
+  const stats = statsResponse?.data || { total: 0, pending: 0, approved: 0, total_loss: 0 }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -255,7 +258,7 @@ export default function DamagedItems() {
 
       {/* Add Damaged Item Dialog */}
       {showAddDialog && (
-        <AddDamagedItemDialog onClose={() => setShowAddDialog(false)} />
+        <AddDamagedItemDialog onClose={() => setShowAddDialog(false)} onSubmit={data => addMutation.mutate(data)} submitting={addMutation.isPending} />
       )}
     </div>
   )
@@ -263,81 +266,86 @@ export default function DamagedItems() {
 
 interface AddDamagedItemDialogProps {
   onClose: () => void
+  onSubmit: (data: any) => void
+  submitting: boolean
 }
 
-function AddDamagedItemDialog({ onClose }: AddDamagedItemDialogProps) {
-  const [productId, setProductId] = useState("")
+function AddDamagedItemDialog({ onClose, onSubmit, submitting }: AddDamagedItemDialogProps) {
+  const [productSearch, setProductSearch] = useState("")
+  const [selectedProduct, setSelectedProduct] = useState<any>(null)
+  const [productResults, setProductResults] = useState<any[]>([])
   const [quantity, setQuantity] = useState("")
+  const [lossAmount, setLossAmount] = useState("")
   const [damageType, setDamageType] = useState<"expired" | "damaged" | "lost" | "other">("damaged")
   const [reason, setReason] = useState("")
 
+  const searchProduct = async (q: string) => {
+    setProductSearch(q)
+    if (q.length < 2) { setProductResults([]); return }
+    const res = await api.get('/products', { params: { search: q, limit: 6 } })
+    setProductResults(res.data.data || [])
+  }
+
+  const selectProduct = (p: any) => {
+    setSelectedProduct(p)
+    setProductSearch(p.name)
+    setProductResults([])
+    setLossAmount(String(Number(p.costPrice || p.sellingPrice || 0)))
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement damaged item creation
-    alert("سيتم تسجيل الهالك قريباً")
-    onClose()
+    if (!selectedProduct) return toast.error("يرجى اختيار منتج")
+    if (!quantity || parseInt(quantity) <= 0) return toast.error("يرجى إدخال كمية صحيحة")
+    onSubmit({ productId: selectedProduct.id, branchId: 1, quantity: parseInt(quantity), lossAmount: parseFloat(lossAmount) || 0, reason, damageType })
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="w-full max-w-2xl flat-card p-6 animate-fade-in max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold text-foreground mb-6">تسجيل هالك جديد</h2>
+      <div className="w-full max-w-2xl bg-card border border-border rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-6">تسجيل هالك جديد</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Product Selection */}
+          {/* Product Search */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              المنتج *
-            </label>
-            <input
-              type="text"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              placeholder="ابحث عن المنتج أو امسح الباركود"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              required
-            />
+            <label className="block text-sm font-medium mb-2">المنتج <span className="text-destructive">*</span></label>
+            <div className="relative">
+              <input type="text" value={productSearch} onChange={e => searchProduct(e.target.value)} placeholder="ابحث عن المنتج بالاسم أو الباركود" className="w-full h-10 px-4 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/20" />
+              {productResults.length > 0 && (
+                <div className="absolute top-full mt-1 w-full bg-card border border-border rounded-xl shadow-lg z-10">
+                  {productResults.map(p => (
+                    <button key={p.id} type="button" onClick={() => selectProduct(p)} className="w-full text-right px-4 py-2 text-sm hover:bg-muted flex justify-between">
+                      <span>{p.name}</span><span className="text-muted-foreground text-xs">مخزون: {p.stockQuantity}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {selectedProduct && <p className="text-xs text-green-600 mt-1">✓ {selectedProduct.name} — المخزون الحالي: {selectedProduct.stockQuantity}</p>}
           </div>
 
-          {/* Quantity */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              الكمية *
-            </label>
-            <input
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="أدخل الكمية"
-              min="1"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">الكمية <span className="text-destructive">*</span></label>
+              <input type="number" min="1" max={selectedProduct?.stockQuantity} value={quantity} onChange={e => setQuantity(e.target.value)} className="w-full h-10 px-4 border border-border rounded-xl text-sm bg-background focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">قيمة الخسارة</label>
+              <input type="number" min="0" step="0.01" value={lossAmount} onChange={e => setLossAmount(e.target.value)} className="w-full h-10 px-4 border border-border rounded-xl text-sm bg-background focus:outline-none" />
+            </div>
           </div>
 
           {/* Damage Type */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              نوع الهالك *
-            </label>
+            <label className="block text-sm font-medium mb-2">نوع الهالك <span className="text-destructive">*</span></label>
             <div className="grid grid-cols-2 gap-3">
               {[
                 { value: "expired" as const, label: "منتهي الصلاحية", icon: AlertTriangle },
                 { value: "damaged" as const, label: "تالف", icon: Package },
                 { value: "lost" as const, label: "مفقود", icon: XCircle },
                 { value: "other" as const, label: "أخرى", icon: MoreVertical },
-              ].map((type) => (
-                <button
-                  key={type.value}
-                  type="button"
-                  onClick={() => setDamageType(type.value)}
-                  className={cn(
-                    "p-4 rounded-xl border-2 transition-all flex items-center gap-3",
-                    damageType === type.value
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
+              ].map(type => (
+                <button key={type.value} type="button" onClick={() => setDamageType(type.value)} className={cn("p-4 rounded-xl border-2 transition-all flex items-center gap-3", damageType === type.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/50")}>
                   <type.icon className="w-5 h-5 text-primary" />
                   <span className="text-sm font-semibold">{type.label}</span>
                 </button>
@@ -345,45 +353,20 @@ function AddDamagedItemDialog({ onClose }: AddDamagedItemDialogProps) {
             </div>
           </div>
 
-          {/* Reason */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              السبب التفصيلي *
-            </label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="اشرح سبب الهالك بالتفصيل..."
-              rows={3}
-              className="w-full px-4 py-3 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              required
-            />
+            <label className="block text-sm font-medium mb-2">السبب <span className="text-destructive">*</span></label>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="اشرح سبب الهالك..." className="w-full px-4 py-3 border border-border rounded-xl text-sm bg-background focus:outline-none resize-none" required />
           </div>
 
-          {/* Info Box */}
-          <div className="p-4 bg-warning-light rounded-xl flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-warning mb-1">تنبيه مهم</p>
-              <p className="text-xs text-warning">
-                سيتم خصم الكمية المُبلّغ عنها من المخزون بعد الموافقة. تأكد من دقة البيانات المدخلة.
-              </p>
-            </div>
+          <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-orange-700">سيتم خصم الكمية فوراً من المخزون بعد التسجيل.</p>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 h-12 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-secondary/80 transition-colors"
-            >
-              إلغاء
-            </button>
-            <button
-              type="submit"
-              className="flex-1 h-12 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors"
-            >
+            <button type="button" onClick={onClose} className="flex-1 h-12 border border-border rounded-xl font-medium hover:bg-muted transition-colors">إلغاء</button>
+            <button type="submit" disabled={submitting} className="flex-1 h-12 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2">
+              {submitting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               تسجيل الهالك
             </button>
           </div>

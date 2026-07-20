@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useAuth } from "@/contexts/AuthContext"
 import {
   Warehouse,
   LayoutDashboard,
@@ -21,6 +22,12 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  ArrowDownCircle,
+  Calendar,
+  Landmark,
+  ArrowLeftRight,
+  TrendingUp,
+  Receipt,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -56,14 +63,20 @@ const navigationItems: NavItem[] = [
     roles: ["مدير", "محاسب"],
   },
   {
-    label: "العملاء",
-    icon: Users,
-    path: "/customers",
+    label: "عروض الأسعار",
+    icon: FileText,
+    path: "/quotations",
+    roles: ["مدير", "محاسب"],
   },
   {
     label: "المرتجعات",
     icon: RotateCcw,
     path: "/returns",
+  },
+  {
+    label: "العملاء",
+    icon: Users,
+    path: "/customers",
   },
   {
     label: "إدارة المخزون",
@@ -72,6 +85,7 @@ const navigationItems: NavItem[] = [
       { label: "المنتجات", icon: Package, path: "/products" },
       { label: "المخازن", icon: Building2, path: "/warehouses" },
       { label: "الهوالك", icon: AlertTriangle, path: "/damaged-items" },
+      { label: "تحويل المخزون", icon: ArrowLeftRight, path: "/inventory-transfers" },
     ],
     roles: ["مدير", "محاسب"],
   },
@@ -79,11 +93,7 @@ const navigationItems: NavItem[] = [
     label: "المشتريات",
     icon: FileText,
     children: [
-      {
-        label: "فواتير الشراء",
-        icon: FileText,
-        path: "/purchase-invoices",
-      },
+      { label: "فواتير الشراء", icon: FileText, path: "/purchase-invoices" },
       { label: "الموردين", icon: Truck, path: "/suppliers" },
     ],
     roles: ["مدير", "محاسب"],
@@ -92,6 +102,9 @@ const navigationItems: NavItem[] = [
     label: "المالية",
     icon: DollarSign,
     children: [
+      { label: "سندات القبض والدفع", icon: Receipt, path: "/vouchers" },
+      { label: "الأقساط والديون", icon: Calendar, path: "/installments" },
+      { label: "الحسابات البنكية", icon: Landmark, path: "/bank-accounts" },
       { label: "المصروفات", icon: DollarSign, path: "/expenses" },
       { label: "رأس المال", icon: Wallet, path: "/capital-setup" },
     ],
@@ -100,7 +113,10 @@ const navigationItems: NavItem[] = [
   {
     label: "التقارير",
     icon: BarChart3,
-    path: "/reports",
+    children: [
+      { label: "التقارير العامة", icon: BarChart3, path: "/reports" },
+      { label: "الأرباح والخسائر", icon: TrendingUp, path: "/profit-loss" },
+    ],
     roles: ["مدير", "محاسب"],
   },
   {
@@ -130,6 +146,13 @@ export function Sidebar({ userRole = "مدير" }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [openAccordion, setOpenAccordion] = useState<string | null>(null)
   const location = useLocation()
+  const navigate = useNavigate()
+  const { logout } = useAuth()
+
+  const handleLogout = async () => {
+    await logout()
+    navigate("/login")
+  }
 
   const filteredItems = navigationItems.filter(
     (item) => !item.roles || item.roles.includes(userRole)
@@ -190,7 +213,9 @@ export function Sidebar({ userRole = "مدير" }: SidebarProps) {
 
       {/* Footer */}
       <div className="p-4 border-t border-sidebar-border">
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sidebar-foreground hover:bg-sidebar-accent transition-colors">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sidebar-foreground hover:bg-sidebar-accent transition-colors">
           <LogOut className="w-5 h-5 flex-shrink-0" />
           {isExpanded && (
             <span className="text-sm font-medium">تسجيل الخروج</span>

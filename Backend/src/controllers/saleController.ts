@@ -173,43 +173,51 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
 
     switch (period) {
       case 'today':
-        startDate = new Date(now.setHours(0, 0, 0, 0));
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
         break;
       case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
         break;
       case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate = new Date(now);
+        startDate.setMonth(startDate.getMonth() - 1);
         break;
       case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        startDate = new Date(now);
+        startDate.setFullYear(startDate.getFullYear() - 1);
         break;
       default:
-        startDate = new Date(now.setHours(0, 0, 0, 0));
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
     }
 
-    const where: any = {
+    const baseWhere: any = {
       saleDate: { gte: startDate },
-      status: 'completed',
       deletedAt: null
     };
-
     if (branchId) {
-      where.branchId = parseInt(branchId as string);
+      baseWhere.branchId = parseInt(branchId as string);
     }
 
-    const [salesStats, previousPeriodStats] = await Promise.all([
+    const completedWhere = { ...baseWhere, status: 'completed' };
+
+    const [salesStats, completedCount, pendingCount, cancelledCount, previousPeriodStats] = await Promise.all([
       prisma.sale.aggregate({
-        where,
+        where: completedWhere,
         _sum: { totalAmount: true, paidAmount: true },
         _count: true,
         _avg: { totalAmount: true }
       }),
+      prisma.sale.count({ where: { ...baseWhere, status: 'completed' } }),
+      prisma.sale.count({ where: { ...baseWhere, status: 'pending' } }),
+      prisma.sale.count({ where: { ...baseWhere, status: 'cancelled' } }),
       prisma.sale.aggregate({
         where: {
-          ...where,
+          ...completedWhere,
           saleDate: {
-            gte: new Date(startDate.getTime() - (now.getTime() - startDate.getTime())),
+            gte: new Date(startDate.getTime() - (Date.now() - startDate.getTime())),
             lt: startDate
           }
         },
@@ -220,17 +228,26 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
 
     const totalSales = salesStats._sum.totalAmount || 0;
     const previousTotal = previousPeriodStats._sum.totalAmount || 0;
-    const salesChange = previousTotal > 0 
-      ? ((totalSales.toNumber() - previousTotal.toNumber()) / previousTotal.toNumber()) * 100 
+    const totalNum = typeof totalSales === 'object' && 'toNumber' in totalSales ? totalSales.toNumber() : Number(totalSales);
+    const prevNum = typeof previousTotal === 'object' && 'toNumber' in previousTotal ? previousTotal.toNumber() : Number(previousTotal);
+    const salesChange = prevNum > 0
+      ? ((totalNum - prevNum) / prevNum) * 100
       : 0;
 
     res.json({
       success: true,
       data: {
         period,
-        totalSales: salesStats._sum.totalAmount || 0,
+        totalSales: totalNum,
         totalOrders: salesStats._count,
-        averageOrderValue: salesStats._avg.totalAmount || 0,
+        completedCount,
+        pendingCount,
+        cancelledCount,
+        averageOrderValue: salesStats._avg.totalAmount
+          ? (typeof salesStats._avg.totalAmount === 'object' && 'toNumber' in salesStats._avg.totalAmount
+              ? salesStats._avg.totalAmount.toNumber()
+              : Number(salesStats._avg.totalAmount))
+          : 0,
         totalPaid: salesStats._sum.paidAmount || 0,
         salesChange: parseFloat(salesChange.toFixed(2)),
         ordersChange: previousPeriodStats._count > 0

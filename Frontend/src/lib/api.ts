@@ -44,30 +44,29 @@ api.interceptors.response.use(
     if (error.response) {
       const { status, data } = error.response
       
+      const message = (data as any)?.message || ''
+      const isAuthError =
+        status === 401 ||
+        (typeof message === 'string' && /invalid or expired token|no token provided|unauthorized/i.test(message))
+
+      if (isAuthError && window.location.pathname !== '/login') {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+        localStorage.removeItem('token_expiry')
+        window.location.href = '/login'
+        return Promise.reject(error)
+      }
+
       switch (status) {
-        case 401:
-          // Unauthorized - Clear token and redirect to login (only if not already on login page)
-          if (window.location.pathname !== '/login') {
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('user')
-            localStorage.removeItem('token_expiry')
-            window.location.href = '/login'
-          }
-          break
-          
         case 403:
-          // Forbidden - User doesn't have permission
           console.error('Access forbidden:', data)
-          // You can show a toast notification here
           break
           
         case 404:
-          // Not found
           console.error('Resource not found:', data)
           break
           
         case 422:
-          // Validation error
           console.error('Validation error:', data)
           break
           

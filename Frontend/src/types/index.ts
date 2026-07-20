@@ -45,13 +45,17 @@ export interface Customer {
   id: number
   name: string
   phone: string
-  status: 'pending' | 'approved'
-  added_by: number
-  is_vip: boolean
-  vip_color?: string
-  created_at: string
-  updated_at: string
-  deleted_at?: string
+  email?: string
+  type: string
+  companyName?: string
+  creditLimit: number
+  currentBalance: number
+  loyaltyPoints: number
+  customerTier: 'bronze' | 'silver' | 'gold' | 'platinum'
+  isActive: boolean
+  notes?: string
+  createdAt: string
+  addresses?: any[]
 }
 
 export interface Supplier {

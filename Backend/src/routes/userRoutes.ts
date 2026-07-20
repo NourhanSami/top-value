@@ -9,7 +9,7 @@ import {
   getUserActivity,
   getAllRoles
 } from '../controllers/userController';
-import { authenticateToken } from '../middlewares/auth';
+import { authenticateToken, authorize } from '../middlewares/auth';
 
 const router = Router();
 
@@ -17,19 +17,19 @@ const router = Router();
 router.use(authenticateToken);
 
 // Roles
-router.get('/roles', getAllRoles);
+router.get('/roles', authorize('users.view'), getAllRoles);
 
 // Statistics
-router.get('/statistics', getUserStatistics);
+router.get('/statistics', authorize('users.view'), getUserStatistics);
 
 // Activity
-router.get('/:id/activity', getUserActivity);
+router.get('/:id/activity', authorize('users.view'), getUserActivity);
 
 // CRUD operations
-router.get('/', getAllUsers);
-router.get('/:id', getUserById);
-router.post('/', createUser);
-router.put('/:id', updateUser);
-router.delete('/:id', deleteUser);
+router.get('/', authorize('users.view'), getAllUsers);
+router.get('/:id', authorize('users.view'), getUserById);
+router.post('/', authorize('users.create'), createUser);
+router.put('/:id', authorize('users.edit'), updateUser);
+router.delete('/:id', authorize('users.delete'), deleteUser);
 
 export default router;

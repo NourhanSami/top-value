@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Toaster } from "react-hot-toast"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import { MainLayout } from "./components/layout/MainLayout"
 import Login from "./pages/Login"
@@ -18,6 +19,12 @@ import DamagedItems from "./pages/DamagedItems"
 import ActivityLogs from "./pages/ActivityLogs"
 import Reports from "./pages/Reports"
 import Sales from "./pages/Sales"
+import Quotations from "./pages/Quotations"
+import PaymentVouchers from "./pages/PaymentVouchers"
+import InstallmentsPage from "./pages/InstallmentsPage"
+import BankAccountsPage from "./pages/BankAccountsPage"
+import InventoryTransfersPage from "./pages/InventoryTransfersPage"
+import ProfitLossReport from "./pages/ProfitLossReport"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,6 +116,12 @@ function AppRoutes() {
         <Route path="/activity-logs" element={<ActivityLogs />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/capital-setup" element={<div className="p-6"><h1 className="text-2xl font-bold">رأس المال</h1><p className="text-muted-foreground mt-2">قريباً...</p></div>} />
+        <Route path="/quotations" element={<Quotations />} />
+        <Route path="/vouchers" element={<PaymentVouchers />} />
+        <Route path="/installments" element={<InstallmentsPage />} />
+        <Route path="/bank-accounts" element={<BankAccountsPage />} />
+        <Route path="/inventory-transfers" element={<InventoryTransfersPage />} />
+        <Route path="/profit-loss" element={<ProfitLossReport />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -122,6 +135,7 @@ function App() {
       <AuthProvider>
         <BrowserRouter>
           <AppRoutes />
+          <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

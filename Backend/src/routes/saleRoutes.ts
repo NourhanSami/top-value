@@ -6,7 +6,7 @@ import {
   getSalesStatistics,
   getSaleByInvoiceNumber
 } from '../controllers/saleController';
-import { authenticateToken } from '../middlewares/auth';
+import { authenticateToken, authorize } from '../middlewares/auth';
 
 const router = Router();
 
@@ -14,14 +14,14 @@ const router = Router();
 router.use(authenticateToken);
 
 // Statistics
-router.get('/statistics', getSalesStatistics);
+router.get('/statistics', authorize('reports.view', 'sales.view'), getSalesStatistics);
 
 // Get by invoice number
-router.get('/invoice/:invoiceNumber', getSaleByInvoiceNumber);
+router.get('/invoice/:invoiceNumber', authorize('sales.view'), getSaleByInvoiceNumber);
 
 // CRUD operations
-router.get('/', getAllSales);
-router.get('/:id', getSaleById);
-router.post('/', createSale);
+router.get('/', authorize('sales.view'), getAllSales);
+router.get('/:id', authorize('sales.view'), getSaleById);
+router.post('/', authorize('sales.create'), createSale);
 
 export default router;

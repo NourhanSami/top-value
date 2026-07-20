@@ -82,8 +82,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Login function
   const login = async (email: string, password: string): Promise<void> => {
     try {
-      setIsLoading(true)
-      
       const response = await api.post<{ success: boolean; data: AuthResponse }>('/auth/login', {
         email,
         password
@@ -91,12 +89,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const { user: userData, token: authToken, expires_in } = response.data.data
 
-      // Calculate token expiry time (default 24 hours if not provided)
       const expiryTime = expires_in 
         ? new Date().getTime() + (expires_in * 1000)
         : new Date().getTime() + (24 * 60 * 60 * 1000)
 
-      // Store auth data
       localStorage.setItem('auth_token', authToken)
       localStorage.setItem('user', JSON.stringify(userData))
       localStorage.setItem('token_expiry', expiryTime.toString())
@@ -107,8 +103,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error('Login failed:', error)
       throw error
-    } finally {
-      setIsLoading(false)
     }
   }
 

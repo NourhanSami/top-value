@@ -1,74 +1,69 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  Building2,
-  DollarSign,
-  Printer,
-  Bell,
-  Shield,
-  Database,
-  Palette,
-  Save,
-  RefreshCw,
+  Building2, DollarSign, Printer, Bell, Shield, Database, Palette, Save, Loader2, Mail, Landmark,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import api from "@/lib/api"
+import toast from "react-hot-toast"
 
-type SettingsTab = "company" | "tax" | "print" | "notifications" | "security" | "backup" | "appearance"
+type SettingsTab = "company" | "tax" | "print" | "notifications" | "smtp" | "security" | "backup"
+
+const settingsApi = {
+  getAll: () => api.get('/settings').then(r => r.data),
+  saveBulk: (settings: { key: string; value: string }[]) => api.post('/settings/bulk', { settings }).then(r => r.data),
+}
+
+function useSettings() {
+  return useQuery({ queryKey: ["settings"], queryFn: settingsApi.getAll, staleTime: 10000 })
+}
+
+function useSaveSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: settingsApi.saveBulk,
+    onSuccess: () => { toast.success("تم حفظ الإعدادات بنجاح"); qc.invalidateQueries({ queryKey: ["settings"] }) },
+    onError: () => toast.error("حدث خطأ أثناء الحفظ"),
+  })
+}
+
+function getVal(settings: any[], key: string, def = ""): string {
+  return settings.find((s: any) => s.key === key)?.value ?? def
+}
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("company")
-  const [hasChanges, setHasChanges] = useState(false)
+  const { data: settingsRes, isLoading } = useSettings()
+  const saveMutation = useSaveSettings()
+  const allSettings: any[] = settingsRes?.data || []
 
   const tabs = [
     { id: "company" as SettingsTab, label: "معلومات الشركة", icon: Building2 },
     { id: "tax" as SettingsTab, label: "الضرائب", icon: DollarSign },
     { id: "print" as SettingsTab, label: "الطباعة", icon: Printer },
     { id: "notifications" as SettingsTab, label: "الإشعارات", icon: Bell },
+    { id: "smtp" as SettingsTab, label: "البريد الإلكتروني", icon: Mail },
     { id: "security" as SettingsTab, label: "الأمان", icon: Shield },
     { id: "backup" as SettingsTab, label: "النسخ الاحتياطي", icon: Database },
-    { id: "appearance" as SettingsTab, label: "المظهر", icon: Palette },
   ]
 
-  const handleSave = () => {
-    // TODO: Implement save logic
-    alert("سيتم حفظ الإعدادات قريباً")
-    setHasChanges(false)
-  }
+  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">الإعدادات</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            إدارة إعدادات النظام والتكوين
-          </p>
-        </div>
-        {hasChanges && (
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
-          >
-            <Save className="w-4 h-4" />
-            <span className="text-sm font-medium">حفظ التغييرات</span>
-          </button>
-        )}
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">الإعدادات</h1>
+        <p className="text-sm text-muted-foreground mt-1">إدارة إعدادات النظام والتكوين</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Tabs Sidebar */}
         <div className="lg:col-span-1">
-          <div className="flat-card p-2 space-y-1">
-            {tabs.map((tab) => (
+          <div className="bg-card border border-border rounded-2xl p-2 space-y-1">
+            {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all",
-                  activeTab === tab.id
-                    ? "bg-primary text-primary-foreground"
-                    : "text-foreground hover:bg-muted"
-                )}
+                className={cn("w-full flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all", activeTab === tab.id ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted")}
               >
                 <tab.icon className="w-5 h-5" />
                 <span className="text-sm font-medium">{tab.label}</span>
@@ -77,16 +72,15 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Content Area */}
         <div className="lg:col-span-3">
-          <div className="flat-card p-6">
-            {activeTab === "company" && <CompanySettings onChange={() => setHasChanges(true)} />}
-            {activeTab === "tax" && <TaxSettings onChange={() => setHasChanges(true)} />}
-            {activeTab === "print" && <PrintSettings onChange={() => setHasChanges(true)} />}
-            {activeTab === "notifications" && <NotificationSettings onChange={() => setHasChanges(true)} />}
-            {activeTab === "security" && <SecuritySettings onChange={() => setHasChanges(true)} />}
+          <div className="bg-card border border-border rounded-2xl p-6">
+            {activeTab === "company" && <CompanySettings settings={allSettings} onSave={saveMutation.mutate} saving={saveMutation.isPending} />}
+            {activeTab === "tax" && <TaxSettings settings={allSettings} onSave={saveMutation.mutate} saving={saveMutation.isPending} />}
+            {activeTab === "print" && <PrintSettings settings={allSettings} onSave={saveMutation.mutate} saving={saveMutation.isPending} />}
+            {activeTab === "notifications" && <NotificationSettings settings={allSettings} onSave={saveMutation.mutate} saving={saveMutation.isPending} />}
+            {activeTab === "smtp" && <SmtpSettings settings={allSettings} onSave={saveMutation.mutate} saving={saveMutation.isPending} />}
+            {activeTab === "security" && <SecuritySettings settings={allSettings} onSave={saveMutation.mutate} saving={saveMutation.isPending} />}
             {activeTab === "backup" && <BackupSettings />}
-            {activeTab === "appearance" && <AppearanceSettings onChange={() => setHasChanges(true)} />}
           </div>
         </div>
       </div>
@@ -94,316 +88,247 @@ export default function Settings() {
   )
 }
 
-// Company Settings Component
-function CompanySettings({ onChange }: { onChange: () => void }) {
+// ===== Company Settings =====
+function CompanySettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
+  const [form, setForm] = useState({ company_name: "", company_address: "", company_phone: "", company_email: "", company_tax_number: "", company_commercial_register: "", company_website: "" })
+  useEffect(() => {
+    setForm({
+      company_name: getVal(settings, "company_name", "نظام إدارة المخازن"),
+      company_address: getVal(settings, "company_address"),
+      company_phone: getVal(settings, "company_phone"),
+      company_email: getVal(settings, "company_email"),
+      company_tax_number: getVal(settings, "company_tax_number"),
+      company_commercial_register: getVal(settings, "company_commercial_register"),
+      company_website: getVal(settings, "company_website"),
+    })
+  }, [settings])
+
+  const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">معلومات الشركة</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              اسم الشركة
-            </label>
-            <input
-              type="text"
-              defaultValue="نظام إدارة المخازن"
-              onChange={onChange}
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              العنوان
-            </label>
-            <input
-              type="text"
-              defaultValue=""
-              onChange={onChange}
-              placeholder="أدخل عنوان الشركة"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                رقم الهاتف
-              </label>
-              <input
-                type="tel"
-                onChange={onChange}
-                placeholder="+966XXXXXXXXX"
-                className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                البريد الإلكتروني
-              </label>
-              <input
-                type="email"
-                onChange={onChange}
-                placeholder="info@company.com"
-                className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              الرقم الضريبي
-            </label>
-            <input
-              type="text"
-              onChange={onChange}
-              placeholder="أدخل الرقم الضريبي"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        </div>
+    <SettingsSection title="معلومات الشركة" icon={Building2} onSave={handleSave} saving={saving}>
+      <Field label="اسم الشركة" required><input value={form.company_name} onChange={e => setForm({ ...form, company_name: e.target.value })} className={inputCls} /></Field>
+      <Field label="العنوان"><input value={form.company_address} onChange={e => setForm({ ...form, company_address: e.target.value })} className={inputCls} placeholder="المدينة، الشارع، رقم المبنى" /></Field>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="رقم الهاتف"><input value={form.company_phone} onChange={e => setForm({ ...form, company_phone: e.target.value })} className={inputCls} placeholder="+201XXXXXXXXX" /></Field>
+        <Field label="البريد الإلكتروني"><input value={form.company_email} onChange={e => setForm({ ...form, company_email: e.target.value })} className={inputCls} placeholder="info@company.com" /></Field>
       </div>
-    </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="الرقم الضريبي"><input value={form.company_tax_number} onChange={e => setForm({ ...form, company_tax_number: e.target.value })} className={inputCls} placeholder="أدخل الرقم الضريبي" /></Field>
+        <Field label="السجل التجاري"><input value={form.company_commercial_register} onChange={e => setForm({ ...form, company_commercial_register: e.target.value })} className={inputCls} /></Field>
+      </div>
+      <Field label="الموقع الإلكتروني"><input value={form.company_website} onChange={e => setForm({ ...form, company_website: e.target.value })} className={inputCls} placeholder="https://yourcompany.com" /></Field>
+    </SettingsSection>
   )
 }
 
-// Tax Settings Component
-function TaxSettings({ onChange }: { onChange: () => void }) {
+// ===== Tax Settings =====
+function TaxSettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
+  const [form, setForm] = useState({ tax_enabled: "true", tax_rate: "15", tax_name: "ضريبة القيمة المضافة" })
+  useEffect(() => {
+    setForm({
+      tax_enabled: getVal(settings, "tax_enabled", "true"),
+      tax_rate: getVal(settings, "tax_rate", "15"),
+      tax_name: getVal(settings, "tax_name", "ضريبة القيمة المضافة"),
+    })
+  }, [settings])
+
+  const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">إعدادات الضرائب</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-accent rounded-xl">
-            <div>
-              <p className="font-medium text-foreground">تفعيل ضريبة القيمة المضافة</p>
-              <p className="text-sm text-muted-foreground">تطبيق الضريبة على جميع المبيعات</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" onChange={onChange} />
-              <div className="w-11 h-6 bg-muted peer-focus:ring-2 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-            </label>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              نسبة الضريبة (%)
-            </label>
-            <input
-              type="number"
-              defaultValue="15"
-              onChange={onChange}
-              min="0"
-              max="100"
-              step="0.01"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
+    <SettingsSection title="إعدادات الضرائب" icon={DollarSign} onSave={handleSave} saving={saving}>
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+        <div>
+          <p className="font-medium">تفعيل الضريبة</p>
+          <p className="text-sm text-muted-foreground">تطبيق الضريبة على المبيعات</p>
         </div>
+        <Toggle checked={form.tax_enabled === "true"} onChange={v => setForm({ ...form, tax_enabled: v ? "true" : "false" })} />
       </div>
-    </div>
+      <Field label="اسم الضريبة"><input value={form.tax_name} onChange={e => setForm({ ...form, tax_name: e.target.value })} className={inputCls} /></Field>
+      <Field label="نسبة الضريبة (%)"><input type="number" min="0" max="100" step="0.01" value={form.tax_rate} onChange={e => setForm({ ...form, tax_rate: e.target.value })} className={inputCls} /></Field>
+    </SettingsSection>
   )
 }
 
-// Print Settings Component
-function PrintSettings({ onChange }: { onChange: () => void }) {
+// ===== Print Settings =====
+function PrintSettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
+  const [form, setForm] = useState({ paper_size: "a4", auto_print: "false", show_logo: "true", print_footer: "" })
+  useEffect(() => {
+    setForm({
+      paper_size: getVal(settings, "paper_size", "a4"),
+      auto_print: getVal(settings, "auto_print", "false"),
+      show_logo: getVal(settings, "show_logo", "true"),
+      print_footer: getVal(settings, "print_footer"),
+    })
+  }, [settings])
+
+  const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">إعدادات الطباعة</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              حجم الورق
-            </label>
-            <select 
-              onChange={onChange}
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="a4">A4 (210 x 297 mm)</option>
-              <option value="thermal">Thermal 80mm</option>
-              <option value="thermal58">Thermal 58mm</option>
-            </select>
-          </div>
-          <div className="flex items-center justify-between p-4 bg-accent rounded-xl">
-            <div>
-              <p className="font-medium text-foreground">طباعة تلقائية</p>
-              <p className="text-sm text-muted-foreground">طباعة الفاتورة تلقائياً بعد البيع</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" onChange={onChange} />
-              <div className="w-11 h-6 bg-muted peer-focus:ring-2 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-            </label>
-          </div>
-          <div className="flex items-center justify-between p-4 bg-accent rounded-xl">
-            <div>
-              <p className="font-medium text-foreground">عرض الشعار</p>
-              <p className="text-sm text-muted-foreground">إظهار شعار الشركة في الفواتير</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" onChange={onChange} />
-              <div className="w-11 h-6 bg-muted peer-focus:ring-2 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-            </label>
-          </div>
-        </div>
+    <SettingsSection title="إعدادات الطباعة" icon={Printer} onSave={handleSave} saving={saving}>
+      <Field label="حجم الورق">
+        <select value={form.paper_size} onChange={e => setForm({ ...form, paper_size: e.target.value })} className={inputCls}>
+          <option value="a4">A4</option>
+          <option value="thermal80">حراري 80mm</option>
+          <option value="thermal58">حراري 58mm</option>
+        </select>
+      </Field>
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+        <div><p className="font-medium">طباعة تلقائية</p><p className="text-sm text-muted-foreground">طباعة الفاتورة تلقائياً بعد البيع</p></div>
+        <Toggle checked={form.auto_print === "true"} onChange={v => setForm({ ...form, auto_print: v ? "true" : "false" })} />
       </div>
-    </div>
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+        <div><p className="font-medium">عرض الشعار</p><p className="text-sm text-muted-foreground">إظهار شعار الشركة في الفواتير</p></div>
+        <Toggle checked={form.show_logo === "true"} onChange={v => setForm({ ...form, show_logo: v ? "true" : "false" })} />
+      </div>
+      <Field label="نص تذييل الفاتورة"><input value={form.print_footer} onChange={e => setForm({ ...form, print_footer: e.target.value })} className={inputCls} placeholder="شكراً لتعاملكم معنا" /></Field>
+    </SettingsSection>
   )
 }
 
-// Notification Settings Component
-function NotificationSettings({ onChange }: { onChange: () => void }) {
+// ===== Notification Settings =====
+function NotificationSettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
+  const [form, setForm] = useState({ notify_low_stock: "true", low_stock_threshold: "10", notify_overdue_payments: "true" })
+  useEffect(() => {
+    setForm({
+      notify_low_stock: getVal(settings, "notify_low_stock", "true"),
+      low_stock_threshold: getVal(settings, "low_stock_threshold", "10"),
+      notify_overdue_payments: getVal(settings, "notify_overdue_payments", "true"),
+    })
+  }, [settings])
+
+  const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">إعدادات الإشعارات</h3>
-        <div className="space-y-3">
-          {[
-            { label: "تنبيهات المخزون المنخفض", desc: "إشعار عند انخفاض كمية المنتج" },
-            { label: "عمليات البيع الجديدة", desc: "إشعار عند إتمام عملية بيع" },
-            { label: "طلبات الشراء", desc: "إشعار عند إنشاء أو تحديث طلب شراء" },
-            { label: "المرتجعات", desc: "إشعار عند إضافة مرتجع جديد" },
-            { label: "المصروفات", desc: "إشعار عند إضافة مصروف جديد" },
-          ].map((item, index) => (
-            <div key={index} className="flex items-center justify-between p-4 bg-accent rounded-xl">
-              <div>
-                <p className="font-medium text-foreground">{item.label}</p>
-                <p className="text-sm text-muted-foreground">{item.desc}</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" onChange={onChange} />
-                <div className="w-11 h-6 bg-muted peer-focus:ring-2 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
-          ))}
-        </div>
+    <SettingsSection title="إعدادات الإشعارات" icon={Bell} onSave={handleSave} saving={saving}>
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+        <div><p className="font-medium">تنبيهات المخزون المنخفض</p><p className="text-sm text-muted-foreground">إشعار عند انخفاض كمية المنتج</p></div>
+        <Toggle checked={form.notify_low_stock === "true"} onChange={v => setForm({ ...form, notify_low_stock: v ? "true" : "false" })} />
       </div>
-    </div>
+      <Field label="حد المخزون المنخفض (وحدة)"><input type="number" min="1" value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} className={inputCls} /></Field>
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+        <div><p className="font-medium">تنبيهات الأقساط المتأخرة</p><p className="text-sm text-muted-foreground">إشعار عند تأخر دفعة مستحقة</p></div>
+        <Toggle checked={form.notify_overdue_payments === "true"} onChange={v => setForm({ ...form, notify_overdue_payments: v ? "true" : "false" })} />
+      </div>
+    </SettingsSection>
   )
 }
 
-// Security Settings Component
-function SecuritySettings({ onChange }: { onChange: () => void }) {
+// ===== SMTP Settings =====
+function SmtpSettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
+  const [form, setForm] = useState({ smtp_host: "", smtp_port: "587", smtp_user: "", smtp_pass: "", smtp_from_name: "", smtp_from_email: "" })
+  useEffect(() => {
+    setForm({
+      smtp_host: getVal(settings, "smtp_host"),
+      smtp_port: getVal(settings, "smtp_port", "587"),
+      smtp_user: getVal(settings, "smtp_user"),
+      smtp_pass: getVal(settings, "smtp_pass"),
+      smtp_from_name: getVal(settings, "smtp_from_name"),
+      smtp_from_email: getVal(settings, "smtp_from_email"),
+    })
+  }, [settings])
+
+  const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">إعدادات الأمان</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              مدة الجلسة (دقيقة)
-            </label>
-            <input
-              type="number"
-              defaultValue="60"
-              onChange={onChange}
-              min="5"
-              max="1440"
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-          <div className="flex items-center justify-between p-4 bg-accent rounded-xl">
-            <div>
-              <p className="font-medium text-foreground">المصادقة الثنائية</p>
-              <p className="text-sm text-muted-foreground">طلب رمز تحقق عند تسجيل الدخول</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" onChange={onChange} />
-              <div className="w-11 h-6 bg-muted peer-focus:ring-2 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-            </label>
-          </div>
-          <div className="flex items-center justify-between p-4 bg-accent rounded-xl">
-            <div>
-              <p className="font-medium text-foreground">تسجيل النشاط</p>
-              <p className="text-sm text-muted-foreground">حفظ سجل بجميع العمليات</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" onChange={onChange} />
-              <div className="w-11 h-6 bg-muted peer-focus:ring-2 peer-focus:ring-ring rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-            </label>
-          </div>
-        </div>
+    <SettingsSection title="إعدادات البريد الإلكتروني (SMTP)" icon={Mail} onSave={handleSave} saving={saving}>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="SMTP Host"><input value={form.smtp_host} onChange={e => setForm({ ...form, smtp_host: e.target.value })} className={inputCls} placeholder="smtp.gmail.com" /></Field>
+        <Field label="SMTP Port"><input type="number" value={form.smtp_port} onChange={e => setForm({ ...form, smtp_port: e.target.value })} className={inputCls} /></Field>
       </div>
-    </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="اسم المرسل"><input value={form.smtp_from_name} onChange={e => setForm({ ...form, smtp_from_name: e.target.value })} className={inputCls} /></Field>
+        <Field label="بريد المرسل"><input type="email" value={form.smtp_from_email} onChange={e => setForm({ ...form, smtp_from_email: e.target.value })} className={inputCls} /></Field>
+      </div>
+      <Field label="اسم المستخدم"><input value={form.smtp_user} onChange={e => setForm({ ...form, smtp_user: e.target.value })} className={inputCls} /></Field>
+      <Field label="كلمة المرور"><input type="password" value={form.smtp_pass} onChange={e => setForm({ ...form, smtp_pass: e.target.value })} className={inputCls} /></Field>
+    </SettingsSection>
   )
 }
 
-// Backup Settings Component
+// ===== Security Settings =====
+function SecuritySettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
+  const [form, setForm] = useState({ session_timeout: "480", require_2fa: "false", max_login_attempts: "5" })
+  useEffect(() => {
+    setForm({
+      session_timeout: getVal(settings, "session_timeout", "480"),
+      require_2fa: getVal(settings, "require_2fa", "false"),
+      max_login_attempts: getVal(settings, "max_login_attempts", "5"),
+    })
+  }, [settings])
+
+  const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
+
+  return (
+    <SettingsSection title="إعدادات الأمان" icon={Shield} onSave={handleSave} saving={saving}>
+      <Field label="مدة انتهاء الجلسة (دقيقة)"><input type="number" min="5" value={form.session_timeout} onChange={e => setForm({ ...form, session_timeout: e.target.value })} className={inputCls} /></Field>
+      <Field label="الحد الأقصى لمحاولات تسجيل الدخول"><input type="number" min="1" value={form.max_login_attempts} onChange={e => setForm({ ...form, max_login_attempts: e.target.value })} className={inputCls} /></Field>
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+        <div><p className="font-medium">المصادقة الثنائية (2FA)</p><p className="text-sm text-muted-foreground">طلب رمز تحقق إضافي عند الدخول</p></div>
+        <Toggle checked={form.require_2fa === "true"} onChange={v => setForm({ ...form, require_2fa: v ? "true" : "false" })} />
+      </div>
+    </SettingsSection>
+  )
+}
+
+// ===== Backup Settings =====
 function BackupSettings() {
+  const handleManualBackup = () => toast("قريباً: سيتم تحميل ملف النسخ الاحتياطي", { icon: "💾" })
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">النسخ الاحتياطي</h3>
-        <div className="space-y-4">
-          <div className="p-4 bg-accent rounded-xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="font-medium text-foreground">آخر نسخة احتياطية</p>
-                <p className="text-sm text-muted-foreground">لم يتم إنشاء نسخة احتياطية بعد</p>
-              </div>
-              <Database className="w-8 h-8 text-primary" />
-            </div>
-            <button className="w-full h-10 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4" />
-              إنشاء نسخة احتياطية الآن
-            </button>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              النسخ الاحتياطي التلقائي
-            </label>
-            <select className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
-              <option value="disabled">معطل</option>
-              <option value="daily">يومياً</option>
-              <option value="weekly">أسبوعياً</option>
-              <option value="monthly">شهرياً</option>
-            </select>
-          </div>
-        </div>
+      <div className="flex items-center gap-3 mb-6">
+        <Database className="w-5 h-5 text-primary" />
+        <h3 className="text-lg font-semibold">النسخ الاحتياطي</h3>
+      </div>
+      <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
+        آخر نسخة احتياطية: لم يتم إجراء نسخ احتياطي بعد
+      </div>
+      <button onClick={handleManualBackup} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90">
+        <Database className="w-4 h-4" />
+        إنشاء نسخة احتياطية يدوياً
+      </button>
+    </div>
+  )
+}
+
+// ===== Shared Components =====
+function SettingsSection({ title, icon: Icon, children, onSave, saving }: { title: string; icon: any; children: React.ReactNode; onSave: () => void; saving: boolean }) {
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3 pb-4 border-b border-border">
+        <Icon className="w-5 h-5 text-primary" />
+        <h3 className="text-lg font-semibold">{title}</h3>
+      </div>
+      {children}
+      <div className="pt-4">
+        <button onClick={onSave} disabled={saving} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          حفظ التغييرات
+        </button>
       </div>
     </div>
   )
 }
 
-// Appearance Settings Component
-function AppearanceSettings({ onChange }: { onChange: () => void }) {
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-4">إعدادات المظهر</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              الوضع
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={onChange}
-                className="p-4 rounded-xl border-2 border-primary bg-primary/5"
-              >
-                <Palette className="w-6 h-6 mx-auto mb-2 text-primary" />
-                <p className="text-sm font-semibold">فاتح</p>
-              </button>
-              <button
-                onClick={onChange}
-                className="p-4 rounded-xl border-2 border-border hover:border-primary/50"
-              >
-                <Palette className="w-6 h-6 mx-auto mb-2" />
-                <p className="text-sm font-semibold">داكن</p>
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              اللغة
-            </label>
-            <select 
-              onChange={onChange}
-              className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="ar">العربية</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-        </div>
-      </div>
+    <div>
+      <label className="block text-sm font-medium text-foreground mb-1.5">{label}{required && <span className="text-destructive mr-1">*</span>}</label>
+      {children}
     </div>
   )
 }
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={cn("relative w-11 h-6 rounded-full transition-colors", checked ? "bg-primary" : "bg-muted")}
+    >
+      <span className={cn("absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform", checked ? "translate-x-5 left-0.5" : "left-0.5")} />
+    </button>
+  )
+}
+
+const inputCls = "w-full h-10 px-3 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground"

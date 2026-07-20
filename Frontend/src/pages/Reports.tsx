@@ -31,6 +31,8 @@ import {
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import { dashboardService, saleService, productService, customerService, expenseService } from "@/services/api.service"
+import * as XLSX from "xlsx"
+import api from "@/lib/api"
 
 type ReportType = "sales" | "inventory" | "profit" | "customers"
 type DateRange = "today" | "yesterday" | "week" | "month" | "year" | "custom"
@@ -57,11 +59,24 @@ export default function Reports() {
   ]
 
   const handleExportPDF = () => {
-    alert("سيتم تصدير التقرير كـ PDF قريباً")
+    window.print()
   }
 
-  const handleExportExcel = () => {
-    alert("سيتم تصدير التقرير كـ Excel قريباً")
+  const handleExportExcel = async () => {
+    try {
+      const salesRes = await api.get('/sales', { params: { limit: 999 } })
+      const sales = salesRes.data.data || []
+      const rows = [
+        ["رقم الفاتورة", "العميل", "التاريخ", "الإجمالي", "المدفوع", "طريقة الدفع", "الحالة"],
+        ...sales.map((s: any) => [s.invoiceNumber, s.customer?.name || "—", new Date(s.saleDate).toLocaleDateString('ar-EG'), Number(s.totalAmount), Number(s.paidAmount), s.paymentMethod, s.paymentStatus]),
+      ]
+      const ws = XLSX.utils.aoa_to_sheet(rows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "المبيعات")
+      XLSX.writeFile(wb, `تقرير-المبيعات-${new Date().toISOString().split('T')[0]}.xlsx`)
+    } catch {
+      alert("خطأ أثناء التصدير")
+    }
   }
 
   return (

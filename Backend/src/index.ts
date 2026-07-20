@@ -68,6 +68,16 @@ import expenseRoutes from './routes/expenseRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import branchRoutes from './routes/branchRoutes';
 import userRoutes from './routes/userRoutes';
+import settingsRoutes from './routes/settingsRoutes';
+import saleReturnRoutes from './routes/saleReturnRoutes';
+import damagedItemRoutes from './routes/damagedItemRoutes';
+import quotationRoutes from './routes/quotationRoutes';
+import paymentVoucherRoutes from './routes/paymentVoucherRoutes';
+import paymentScheduleRoutes from './routes/paymentScheduleRoutes';
+import attachmentRoutes from './routes/attachmentRoutes';
+import bankAccountRoutes from './routes/bankAccountRoutes';
+import inventoryTransferRoutes from './routes/inventoryTransferRoutes';
+import emailRoutes from './routes/emailRoutes';
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -81,6 +91,16 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/returns', saleReturnRoutes);
+app.use('/api/damaged-items', damagedItemRoutes);
+app.use('/api/quotations', quotationRoutes);
+app.use('/api/vouchers', paymentVoucherRoutes);
+app.use('/api/payment-schedules', paymentScheduleRoutes);
+app.use('/api/attachments', attachmentRoutes);
+app.use('/api/bank-accounts', bankAccountRoutes);
+app.use('/api/inventory-transfers', inventoryTransferRoutes);
+app.use('/api/email', emailRoutes);
 
 // Error handling
 app.use(notFoundHandler);

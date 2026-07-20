@@ -8,7 +8,7 @@ import {
   deleteProduct,
   getProductStatistics
 } from '../controllers/productController';
-import { authenticateToken } from '../middlewares/auth';
+import { authenticateToken, authorize } from '../middlewares/auth';
 
 const router = Router();
 
@@ -16,16 +16,16 @@ const router = Router();
 router.use(authenticateToken);
 
 // Statistics
-router.get('/statistics', getProductStatistics);
+router.get('/statistics', authorize('products.view'), getProductStatistics);
 
 // Get product by barcode
-router.get('/barcode/:barcode', getProductByBarcode);
+router.get('/barcode/:barcode', authorize('products.view'), getProductByBarcode);
 
 // CRUD operations
-router.get('/', getAllProducts);
-router.get('/:id', getProductById);
-router.post('/', createProduct);
-router.put('/:id', updateProduct);
-router.delete('/:id', deleteProduct);
+router.get('/', authorize('products.view'), getAllProducts);
+router.get('/:id', authorize('products.view'), getProductById);
+router.post('/', authorize('products.create'), createProduct);
+router.put('/:id', authorize('products.edit'), updateProduct);
+router.delete('/:id', authorize('products.delete'), deleteProduct);
 
 export default router;
