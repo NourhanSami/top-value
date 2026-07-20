@@ -174,6 +174,13 @@ export const getProductStatistics = async (req: Request, res: Response, next: Ne
       0
     );
 
+    const stockQtySum = products.reduce((sum, p) => sum + Number(p.stockQuantity || 0), 0);
+
+    const salesAgg = await prisma.saleItem.aggregate({
+      _sum: { quantity: true, totalAmount: true },
+      where: { sale: { deletedAt: null, status: 'completed' } },
+    });
+
     const statistics = {
       total: products.length,
       available: products.filter(p => p.stockQuantity > p.minStockLevel * 2).length,
@@ -186,6 +193,12 @@ export const getProductStatistics = async (req: Request, res: Response, next: Ne
       out_of_stock: products.filter(p => p.stockQuantity === 0).length,
       total_value: totalValue,
       totalValue,
+      totalStockQuantity: stockQtySum,
+      total_stock_quantity: stockQtySum,
+      totalSalesQuantity: Number(salesAgg._sum.quantity || 0),
+      total_sales_quantity: Number(salesAgg._sum.quantity || 0),
+      totalSalesAmount: Number(salesAgg._sum.totalAmount || 0),
+      total_sales_amount: Number(salesAgg._sum.totalAmount || 0),
     };
 
     res.json({

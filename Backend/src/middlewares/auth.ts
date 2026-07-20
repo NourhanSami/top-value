@@ -85,6 +85,20 @@ export const authenticate = async (
         if (Array.isArray(parsed)) menuAccess = parsed.map(String);
       } catch { /* ignore */ }
     }
+    // Fall back to role.menuAccess for custom roles when user has no override
+    if (!menuAccess.length) {
+      for (const ur of user.roles) {
+        if (ur.role.menuAccess) {
+          try {
+            const parsed = JSON.parse(ur.role.menuAccess);
+            if (Array.isArray(parsed) && parsed.length) {
+              menuAccess = parsed.map(String);
+              break;
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }
 
     // Attach user to request
     req.user = {
@@ -122,6 +136,7 @@ export const requireMenuAccess = (...sections: string[]) => {
       return next();
     }
 
+    // menuAccess already includes role.menuAccess fallback from authenticate()
     let allowed = req.user.menuAccess || [];
     if (!allowed.length) {
       for (const role of req.user.roles) {

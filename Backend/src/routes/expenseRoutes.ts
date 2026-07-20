@@ -8,7 +8,8 @@ import {
   getExpenseStatistics,
   approveExpense,
   rejectExpense,
-  getAllExpenseCategories
+  getAllExpenseCategories,
+  createExpenseCategory
 } from '../controllers/expenseController';
 import { authenticateToken } from '../middlewares/auth';
 
@@ -19,6 +20,7 @@ router.use(authenticateToken);
 
 // Categories
 router.get('/categories', getAllExpenseCategories);
+router.post('/categories', createExpenseCategory);
 
 // Statistics
 router.get('/statistics', getExpenseStatistics);

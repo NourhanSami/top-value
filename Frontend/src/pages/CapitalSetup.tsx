@@ -187,6 +187,15 @@ export default function CapitalSetup() {
             <span className="text-muted-foreground">مستحقات الموردين</span>
             <span className="font-medium text-destructive">{formatCurrency(Number(current?.supplierDebts || 0))}</span>
           </div>
+          <div className="flex justify-between py-2 border-b border-border md:col-span-2">
+            <span className="text-muted-foreground font-semibold">صافي المستحقات</span>
+            <span className={`font-bold ${Number(current?.customerDebts || 0) - Number(current?.supplierDebts || 0) >= 0 ? "text-success" : "text-destructive"}`}>
+              {formatCurrency(Number(current?.customerDebts || 0) - Number(current?.supplierDebts || 0))}
+            </span>
+          </div>
+          <div className="flex justify-between py-2 border-b border-border md:col-span-2 text-xs text-muted-foreground">
+            <span>صافي المستحقات = ديون العملاء − مستحقات الموردين</span>
+          </div>
         </div>
       </div>
     </div>

@@ -19,6 +19,9 @@ interface CustomerFormData {
   balance?: number
   creditLimit?: number
   notes?: string
+  type?: string
+  companyName?: string
+  taxNumber?: string
 }
 
 export default function CustomerDialog({
@@ -33,6 +36,9 @@ export default function CustomerDialog({
     phone: "",
     balance: 0,
     creditLimit: 0,
+    type: "individual",
+    companyName: "",
+    taxNumber: "",
   })
 
   // Fetch customer data if editing
@@ -53,6 +59,9 @@ export default function CustomerDialog({
         balance: customer.balance || 0,
         creditLimit: customer.creditLimit || 0,
         notes: customer.notes || "",
+        type: customer.type || "individual",
+        companyName: customer.companyName || "",
+        taxNumber: customer.taxNumber || "",
       })
     }
   }, [customerResponse, mode])
@@ -136,6 +145,49 @@ export default function CustomerDialog({
               value={formData.email || ""}
               onChange={handleChange}
               className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">نوع العميل</label>
+            <select
+              name="type"
+              value={formData.type || "individual"}
+              onChange={(e) => setFormData((prev) => ({ ...prev, type: e.target.value }))}
+              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="individual">فرد</option>
+              <option value="company">شركة (B2B)</option>
+            </select>
+          </div>
+
+          {formData.type === "company" && (
+            <div>
+              <label className="block text-sm font-medium mb-2">اسم المنشأة</label>
+              <input
+                type="text"
+                name="companyName"
+                value={formData.companyName || ""}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium mb-2">الرقم الضريبي</label>
+            <input
+              type="text"
+              name="taxNumber"
+              value={formData.taxNumber || ""}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  taxNumber: e.target.value.replace(/\D/g, "").slice(0, 15),
+                }))
+              }
+              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+              placeholder="10–15 رقم"
             />
           </div>
 

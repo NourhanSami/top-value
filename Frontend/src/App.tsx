@@ -26,6 +26,9 @@ import BankAccountsPage from "./pages/BankAccountsPage"
 import InventoryTransfersPage from "./pages/InventoryTransfersPage"
 import ProfitLossReport from "./pages/ProfitLossReport"
 import CapitalSetup from "./pages/CapitalSetup"
+import TreasuryPage from "./pages/TreasuryPage"
+import DriverRoutesPage from "./pages/DriverRoutesPage"
+import RolesPage from "./pages/RolesPage"
 import { resolveMenuAccess, sectionForPath } from "./lib/menuAccess"
 
 const queryClient = new QueryClient({
@@ -82,7 +85,7 @@ function ProtectedRoutes() {
     employee: "موظف",
   }
 
-  const arabicRole = roleMapping[user.role.toLowerCase()] || user.role
+  const arabicRole = roleMapping[user.role.toLowerCase()] || user.roleDisplayName || user.role
 
   const layoutUser = {
     name: user.name,
@@ -137,6 +140,7 @@ function AppRoutes() {
         <Route path="/branches" element={<AccessGuard><Branches /></AccessGuard>} />
         <Route path="/warehouses" element={<AccessGuard><Branches /></AccessGuard>} />
         <Route path="/users" element={<AccessGuard><Users /></AccessGuard>} />
+        <Route path="/roles" element={<AccessGuard><RolesPage /></AccessGuard>} />
         <Route path="/employees" element={<Navigate to="/users" replace />} />
         <Route path="/returns" element={<AccessGuard><Returns /></AccessGuard>} />
         <Route path="/settings" element={<AccessGuard><Settings /></AccessGuard>} />
@@ -144,6 +148,8 @@ function AppRoutes() {
         <Route path="/activity-logs" element={<AccessGuard><ActivityLogs /></AccessGuard>} />
         <Route path="/reports" element={<AccessGuard><Reports /></AccessGuard>} />
         <Route path="/capital-setup" element={<AccessGuard><CapitalSetup /></AccessGuard>} />
+        <Route path="/treasury" element={<AccessGuard><TreasuryPage /></AccessGuard>} />
+        <Route path="/driver-routes" element={<AccessGuard><DriverRoutesPage /></AccessGuard>} />
         <Route path="/quotations" element={<AccessGuard><Quotations /></AccessGuard>} />
         <Route path="/vouchers" element={<AccessGuard><PaymentVouchers /></AccessGuard>} />
         <Route path="/installments" element={<AccessGuard><InstallmentsPage /></AccessGuard>} />

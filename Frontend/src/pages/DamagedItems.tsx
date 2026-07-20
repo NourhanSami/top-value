@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -195,6 +196,33 @@ export default function DamagedItems() {
           </select>
 
           {/* Add Button */}
+          <ExportMenu
+            filename={`هوالك-${new Date().toISOString().slice(0, 10)}`}
+            title="الهوالك"
+            columns={[
+              { key: "product", label: "المنتج" },
+              { key: "branch", label: "الفرع" },
+              { key: "quantity", label: "الكمية" },
+              { key: "lossAmount", label: "الخسارة" },
+              { key: "damageType", label: "النوع" },
+              { key: "status", label: "الحالة" },
+              { key: "reason", label: "السبب" },
+              { key: "user", label: "المُبلّغ" },
+              { key: "damagedAt", label: "التاريخ" },
+            ]}
+            rows={items.map((item: any) => ({
+              product: item.product?.name || "",
+              branch: item.branch?.name || "",
+              quantity: Number(item.quantity || 0),
+              lossAmount: Number(item.lossAmount ?? item.loss_amount ?? 0),
+              damageType: getDamageTypeLabel(item.damageType || item.damage_type),
+              status: getStatusBadge(item.status).label,
+              reason: item.reason || "",
+              user: item.user?.name || "",
+              damagedAt: item.damagedAt || item.damaged_at || item.createdAt || item.created_at || "",
+            }))}
+            dateKey="damagedAt"
+          />
           <button 
             onClick={() => setShowAddDialog(true)}
             className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"

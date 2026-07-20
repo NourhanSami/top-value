@@ -9,6 +9,7 @@ const createSaleSchema = z.object({
   customerId: z.number().int().optional(),
   branchId: z.number().int(),
   saleDate: z.string().datetime().optional(),
+  invoiceType: z.enum(['simplified', 'tax']).default('simplified'),
   items: z.array(z.object({
     productId: z.number().int(),
     quantity: z.number().int().positive('الكمية يجب أن تكون أكبر من صفر'),
@@ -22,20 +23,32 @@ const createSaleSchema = z.object({
   totalAmount: z.number().nonnegative(),
   paidAmount: z.number().nonnegative(),
   changeAmount: z.number().nonnegative().default(0),
-  paymentMethod: z.enum(['cash', 'credit', 'card', 'transfer', 'mixed']).default('cash'),
+  paymentMethod: z.enum(['cash', 'credit', 'card', 'transfer', 'mixed', 'split']).default('cash'),
+  cashAmount: z.number().nonnegative().optional().default(0),
+  cardAmount: z.number().nonnegative().optional().default(0),
   loyaltyPointsUsed: z.number().int().nonnegative().default(0),
   notes: z.string().optional()
 });
 
+function normalizeTaxNumber(value?: string | null): string {
+  return (value || '').replace(/\s+/g, '').trim();
+}
+
+function isValidBuyerTaxNumber(value: string): boolean {
+  // Saudi VAT is typically 15 digits; accept 10–15 digits for flexibility
+  return /^\d{10,15}$/.test(value);
+}
+
 // Generate unique invoice number
-async function generateInvoiceNumber(): Promise<string> {
+async function generateInvoiceNumber(invoiceType: 'simplified' | 'tax' = 'simplified'): Promise<string> {
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
-  const prefix = `INV-${year}${month}${day}`;
+  const prefix = invoiceType === 'tax'
+    ? `TAX-${year}${month}${day}`
+    : `INV-${year}${month}${day}`;
 
-  // Get count of today's invoices
   const count = await prisma.sale.count({
     where: {
       invoiceNumber: {
@@ -329,6 +342,49 @@ export const createSale = async (req: Request, res: Response, next: NextFunction
   try {
     const validatedData = createSaleSchema.parse(req.body);
     const userId = (req as any).user.id;
+    const invoiceType = validatedData.invoiceType || 'simplified';
+
+    let buyerTaxNumber: string | null = null;
+    let buyerName: string | null = null;
+    let headerTaxRate = 0;
+
+    if (validatedData.items.length) {
+      headerTaxRate = validatedData.items[0].taxRate || 0;
+    }
+
+    if (invoiceType === 'tax') {
+      if (!validatedData.customerId) {
+        return res.status(400).json({
+          success: false,
+          message: 'الفاتورة الضريبية تتطلب اختيار عميل (B2B)',
+        });
+      }
+
+      const customer = await prisma.customer.findUnique({
+        where: { id: validatedData.customerId },
+      });
+      if (!customer || customer.deletedAt) {
+        return res.status(400).json({ success: false, message: 'العميل غير موجود' });
+      }
+
+      const taxNo = normalizeTaxNumber(customer.taxNumber);
+      if (!taxNo || !isValidBuyerTaxNumber(taxNo)) {
+        return res.status(400).json({
+          success: false,
+          message: 'يجب تسجيل الرقم الضريبي للعميل (10–15 رقم) قبل إصدار فاتورة ضريبية',
+        });
+      }
+
+      buyerTaxNumber = taxNo;
+      buyerName = customer.companyName || customer.name;
+
+      if (!validatedData.taxAmount || validatedData.taxAmount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'الفاتورة الضريبية تتطلب مبلغ ضريبة أكبر من صفر — فعّل الضريبة من الإعدادات',
+        });
+      }
+    }
 
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -348,7 +404,8 @@ export const createSale = async (req: Request, res: Response, next: NextFunction
       }
 
       // Generate invoice number
-      const invoiceNumber = await generateInvoiceNumber();
+      const invoiceNumber = await generateInvoiceNumber(invoiceType);
+      const invoiceUuid = crypto.randomUUID();
 
       // Calculate payment status
       let paymentStatus = 'paid';
@@ -368,6 +425,11 @@ export const createSale = async (req: Request, res: Response, next: NextFunction
           userId,
           saleDate: validatedData.saleDate ? new Date(validatedData.saleDate) : new Date(),
           status: 'completed',
+          invoiceType,
+          buyerTaxNumber,
+          buyerName,
+          taxRate: headerTaxRate,
+          invoiceUuid,
           subtotal: validatedData.subtotal,
           taxAmount: validatedData.taxAmount,
           discountAmount: validatedData.discountAmount,
@@ -375,6 +437,8 @@ export const createSale = async (req: Request, res: Response, next: NextFunction
           paidAmount: validatedData.paidAmount,
           changeAmount: validatedData.changeAmount,
           paymentMethod: validatedData.paymentMethod,
+          cashAmount: validatedData.cashAmount ?? (validatedData.paymentMethod === 'cash' ? validatedData.paidAmount : 0),
+          cardAmount: validatedData.cardAmount ?? (validatedData.paymentMethod === 'card' ? validatedData.paidAmount : 0),
           paymentStatus,
           loyaltyPointsEarned,
           loyaltyPointsUsed: validatedData.loyaltyPointsUsed,

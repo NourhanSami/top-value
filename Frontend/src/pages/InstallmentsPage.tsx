@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, AlertTriangle, Clock, CheckCircle, Calendar, X, Loader2, Search } from "lucide-react"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -95,9 +96,32 @@ export default function InstallmentsPage() {
           <h1 className="text-2xl font-bold">متابعة الأقساط والديون</h1>
           <p className="text-sm text-muted-foreground mt-1">تتبع جدول المدفوعات والأقساط المستحقة</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
-          <Plus className="w-4 h-4" /> إضافة قسط
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            filename={`أقساط-${new Date().toISOString().slice(0, 10)}`}
+            title="الأقساط والديون"
+            columns={[
+              { key: "party", label: "العميل/المورد" },
+              { key: "dueDate", label: "تاريخ الاستحقاق" },
+              { key: "amount", label: "المبلغ الكلي" },
+              { key: "paidAmount", label: "المدفوع" },
+              { key: "remaining", label: "المتبقي" },
+              { key: "status", label: "الحالة" },
+            ]}
+            rows={schedules.map((s: PaymentSchedule) => ({
+              party: s.customer?.name || s.supplier?.name || "",
+              dueDate: s.dueDate,
+              amount: Number(s.amount || 0),
+              paidAmount: Number(s.paidAmount || 0),
+              remaining: Number(s.amount || 0) - Number(s.paidAmount || 0),
+              status: statusConfig[s.status]?.label || s.status,
+            }))}
+            dateKey="dueDate"
+          />
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
+            <Plus className="w-4 h-4" /> إضافة قسط
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 flex-wrap">

@@ -2,9 +2,10 @@ import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { expenseService } from "@/services/api.service"
 import {
-  Receipt, Search, Plus, Download, Edit2, Trash2, Calendar, TrendingUp, TrendingDown,
+  Receipt, Search, Plus, Edit2, Trash2, Calendar, TrendingUp, TrendingDown,
 } from "lucide-react"
 import { ExpenseDialog } from "@/components/dialogs"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { formatCurrency } from "@/lib/utils"
 import toast from "react-hot-toast"
 
@@ -79,29 +80,16 @@ export default function Expenses() {
     setSelectedExpense(null)
   }
 
-  const handleExport = () => {
-    const rows = expensesData?.data || []
-    if (!rows.length) return toast.error("لا توجد بيانات للتصدير")
-    const header = ["التاريخ", "العنوان", "الوصف", "الفئة", "الفرع", "المبلغ", "طريقة الدفع"]
-    const csvRows = rows.map((e: any) => [
-      e.expenseDate ? new Date(e.expenseDate).toLocaleDateString("ar-EG") : "",
-      e.title || "",
-      e.description || "",
-      e.category?.name || "",
-      e.branch?.name || "",
-      Number(e.amount || 0).toFixed(2),
-      paymentLabel[e.paymentMethod] || e.paymentMethod || "",
-    ])
-    const csv = "\uFEFF" + [header, ...csvRows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n")
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success("تم تصدير الملف")
-  }
+  const expenses = expensesData?.data || []
+  const exportRows = expenses.map((e: any) => ({
+    expenseDate: e.expenseDate,
+    title: e.title || "",
+    description: e.description || "",
+    category: e.category?.name || "",
+    branch: e.branch?.name || "",
+    amount: Number(e.amount || 0),
+    paymentMethod: paymentLabel[e.paymentMethod] || e.paymentMethod || "",
+  }))
 
   return (
     <div className="space-y-6">
@@ -110,13 +98,31 @@ export default function Expenses() {
           <h1 className="text-3xl font-bold text-foreground">المصروفات</h1>
           <p className="text-muted-foreground mt-1">إدارة ومتابعة جميع المصروفات والنفقات</p>
         </div>
-        <button
-          onClick={() => { setSelectedExpense(null); setIsDialogOpen(true) }}
-          className="h-12 px-6 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm"
-        >
-          <Plus className="w-5 h-5" />
-          <span>إضافة مصروف</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              const name = window.prompt("اسم تصنيف المصروف الجديد (مثال: وقود، صيانة...)")
+              if (!name?.trim()) return
+              try {
+                await expenseService.createCategory({ name: name.trim() })
+                toast.success("تم إضافة التصنيف")
+                queryClient.invalidateQueries({ queryKey: ["expense-categories"] })
+              } catch (e: any) {
+                toast.error(e.response?.data?.message || "فشل إضافة التصنيف")
+              }
+            }}
+            className="h-12 px-4 border border-border rounded-xl font-medium hover:bg-muted transition-colors text-sm"
+          >
+            + تصنيف مصروف
+          </button>
+          <button
+            onClick={() => { setSelectedExpense(null); setIsDialogOpen(true) }}
+            className="h-12 px-6 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm"
+          >
+            <Plus className="w-5 h-5" />
+            <span>إضافة مصروف</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -173,13 +179,21 @@ export default function Expenses() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <button
-            onClick={handleExport}
-            className="h-12 px-6 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
-          >
-            <Download className="w-5 h-5" />
-            <span>تصدير</span>
-          </button>
+          <ExportMenu
+            filename={`مصروفات-${new Date().toISOString().slice(0, 10)}`}
+            title="المصروفات"
+            columns={[
+              { key: "expenseDate", label: "التاريخ" },
+              { key: "title", label: "العنوان" },
+              { key: "description", label: "الوصف" },
+              { key: "category", label: "الفئة" },
+              { key: "branch", label: "الفرع" },
+              { key: "amount", label: "المبلغ" },
+              { key: "paymentMethod", label: "طريقة الدفع" },
+            ]}
+            rows={exportRows}
+            dateKey="expenseDate"
+          />
         </div>
       </div>
 

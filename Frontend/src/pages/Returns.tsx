@@ -4,6 +4,7 @@ import {
   Search, Plus, RotateCcw, DollarSign, Package, Calendar, Eye, X, Loader2, CheckCircle,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -229,13 +230,36 @@ export default function Returns() {
           <h1 className="text-2xl font-bold text-foreground">المرتجعات</h1>
           <p className="text-sm text-muted-foreground mt-1">إدارة مرتجعات المبيعات</p>
         </div>
-        <button
-          onClick={() => setShowDialog(true)}
-          className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="text-sm font-medium">إضافة مرتجع</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            filename={`مرتجعات-${new Date().toISOString().slice(0, 10)}`}
+            title="المرتجعات"
+            columns={[
+              { key: "returnNumber", label: "رقم المرتجع" },
+              { key: "invoiceNumber", label: "الفاتورة الأصلية" },
+              { key: "returnDate", label: "التاريخ" },
+              { key: "reason", label: "السبب" },
+              { key: "refundMethod", label: "طريقة الاسترداد" },
+              { key: "totalRefund", label: "المبلغ" },
+            ]}
+            rows={returns.map((r: SaleReturn) => ({
+              returnNumber: r.returnNumber,
+              invoiceNumber: r.sale?.invoiceNumber || "",
+              returnDate: r.returnDate,
+              reason: r.reason || "",
+              refundMethod: r.refundMethod === "cash" ? "نقدي" : "رصيد عميل",
+              totalRefund: Number(r.totalRefund || 0),
+            }))}
+            dateKey="returnDate"
+          />
+          <button
+            onClick={() => setShowDialog(true)}
+            className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="text-sm font-medium">إضافة مرتجع</span>
+          </button>
+        </div>
       </div>
 
       {/* Search */}

@@ -620,11 +620,21 @@ export const getAllRoles = async (req: Request, res: Response, next: NextFunctio
 
     res.json({
       success: true,
-      data: roles.map(role => ({
-        ...role,
-        permissions: role.permissions.map(p => p.permission),
-        userCount: role._count.users
-      }))
+      data: roles.map(role => {
+        let menuAccess: string[] = [];
+        if (role.menuAccess) {
+          try {
+            const parsed = JSON.parse(role.menuAccess);
+            if (Array.isArray(parsed)) menuAccess = parsed.map(String);
+          } catch { /* ignore */ }
+        }
+        return {
+          ...role,
+          menuAccess,
+          permissions: role.permissions.map(p => p.permission),
+          userCount: role._count.users
+        };
+      })
     });
   } catch (error) {
     next(error);

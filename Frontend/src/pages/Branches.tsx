@@ -4,6 +4,7 @@ import {
   Search, Plus, MoreVertical, Edit, Trash2, Building2, TrendingUp, Users, MapPin, Phone, X, Loader2,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency } from "@/lib/utils"
 import { branchService } from "@/services/api.service"
 import toast from "react-hot-toast"
@@ -132,6 +133,33 @@ export default function Branches() {
               />
             </div>
           </div>
+          <ExportMenu
+            filename={`فروع-${new Date().toISOString().slice(0, 10)}`}
+            title="الفروع"
+            columns={[
+              { key: "name", label: "اسم الفرع" },
+              { key: "code", label: "الكود" },
+              { key: "phone", label: "الهاتف" },
+              { key: "address", label: "العنوان" },
+              { key: "isActive", label: "الحالة" },
+              { key: "isMain", label: "رئيسي" },
+              { key: "users", label: "الموظفون" },
+              { key: "sales", label: "عدد المبيعات" },
+              { key: "createdAt", label: "تاريخ الإضافة" },
+            ]}
+            rows={branches.map((b) => ({
+              name: b.name,
+              code: b.code || "",
+              phone: b.phone || "",
+              address: b.address || "",
+              isActive: b.isActive ? "نشط" : "غير نشط",
+              isMain: b.isMain ? "نعم" : "لا",
+              users: Number(b._count?.users || 0),
+              sales: Number(b._count?.sales || 0),
+              createdAt: b.createdAt,
+            }))}
+            dateKey="createdAt"
+          />
           <button onClick={openCreate} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90">
             <Plus className="w-4 h-4" />
             <span className="text-sm font-medium">إضافة فرع</span>

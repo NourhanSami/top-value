@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, Search, FileText, ArrowRight, X, Loader2, CheckCircle, Clock, XCircle, Eye } from "lucide-react"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -97,9 +98,32 @@ export default function Quotations() {
           <h1 className="text-2xl font-bold">عروض الأسعار</h1>
           <p className="text-sm text-muted-foreground mt-1">إدارة عروض الأسعار وتحويلها إلى فواتير</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
-          <Plus className="w-4 h-4" /> عرض سعر جديد
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            filename={`عروض-أسعار-${new Date().toISOString().slice(0, 10)}`}
+            title="عروض الأسعار"
+            columns={[
+              { key: "quotationNumber", label: "رقم العرض" },
+              { key: "customer", label: "العميل" },
+              { key: "quotationDate", label: "التاريخ" },
+              { key: "validUntil", label: "الصلاحية" },
+              { key: "status", label: "الحالة" },
+              { key: "totalAmount", label: "الإجمالي" },
+            ]}
+            rows={quotations.map((q) => ({
+              quotationNumber: q.quotationNumber,
+              customer: q.customer?.name || "",
+              quotationDate: q.quotationDate,
+              validUntil: q.validUntil || "",
+              status: statusLabel[q.status]?.label || q.status,
+              totalAmount: Number(q.totalAmount || 0),
+            }))}
+            dateKey="quotationDate"
+          />
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
+            <Plus className="w-4 h-4" /> عرض سعر جديد
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 flex-wrap">

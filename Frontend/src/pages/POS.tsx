@@ -13,7 +13,7 @@ interface CartItem {
   quantity: number
 }
 
-type PaymentMethod = "cash" | "card" | "credit"
+type PaymentMethod = "cash" | "card" | "credit" | "split"
 
 export default function POS() {
   const { user } = useAuth()
@@ -25,7 +25,10 @@ export default function POS() {
   const [showCustomerDialog, setShowCustomerDialog] = useState(false)
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>("cash")
+  const [splitCash, setSplitCash] = useState("")
+  const [splitCard, setSplitCard] = useState("")
   const [discountPercent, setDiscountPercent] = useState(0)
+  const [invoiceType, setInvoiceType] = useState<"simplified" | "tax">("simplified")
   const taxCfg = getTaxConfig()
 
   const getDiscountAmount = () => (getTotalAmount() * discountPercent) / 100
@@ -170,10 +173,26 @@ export default function POS() {
     setCart([])
     setSelectedCustomer(null)
     setSelectedPaymentMethod("cash")
+    setInvoiceType("simplified")
   }
 
   const handleCheckout = () => {
     if (cart.length === 0) return
+    if (invoiceType === "tax") {
+      if (!selectedCustomer) {
+        alert("الفاتورة الضريبية تتطلب اختيار عميل B2B")
+        return
+      }
+      const taxNo = String((selectedCustomer as any).taxNumber || "").replace(/\s+/g, "")
+      if (!/^\d{10,15}$/.test(taxNo)) {
+        alert("العميل لا يملك رقماً ضريبياً صالحاً (10–15 رقم). حدّث بيانات العميل أولاً.")
+        return
+      }
+      if (!taxCfg.enabled || getTaxAmount() <= 0) {
+        alert("فعّل الضريبة من الإعدادات قبل إصدار فاتورة ضريبية")
+        return
+      }
+    }
     setShowPaymentDialog(true)
   }
 
@@ -191,20 +210,59 @@ export default function POS() {
       return
     }
 
+    if (invoiceType === "tax") {
+      if (!selectedCustomer) {
+        alert("الفاتورة الضريبية تتطلب اختيار عميل")
+        return
+      }
+      const taxNo = String((selectedCustomer as any).taxNumber || "").replace(/\s+/g, "")
+      if (!/^\d{10,15}$/.test(taxNo)) {
+        alert("الرقم الضريبي للعميل غير صالح")
+        return
+      }
+    }
+
     // Calculate totals
     const subtotal = getTotalAmount()
     const discountAmount = parseFloat(((subtotal * discountPercent) / 100).toFixed(2))
     const afterDiscount = subtotal - discountAmount
-    const taxCfg = getTaxConfig()
     const taxRate = taxCfg.enabled ? taxCfg.rate : 0
     const taxAmount = parseFloat(((afterDiscount * taxRate) / 100).toFixed(2))
     const totalAmount = afterDiscount + taxAmount
-    const paidAmount = totalAmount
-    const changeAmount = 0
+    let cashAmount = 0
+    let cardAmount = 0
+    let paidAmount = totalAmount
+    let changeAmount = 0
+    let paymentMethod: PaymentMethod = selectedPaymentMethod
+
+    if (selectedPaymentMethod === "cash") {
+      cashAmount = totalAmount
+    } else if (selectedPaymentMethod === "card") {
+      cardAmount = totalAmount
+    } else if (selectedPaymentMethod === "credit") {
+      paidAmount = 0
+      cashAmount = 0
+      cardAmount = 0
+    } else if (selectedPaymentMethod === "split") {
+      cashAmount = parseFloat(splitCash) || 0
+      cardAmount = parseFloat(splitCard) || 0
+      paidAmount = cashAmount + cardAmount
+      if (paidAmount <= 0) {
+        alert("أدخل مبلغ الكاش و/أو البطاقة")
+        return
+      }
+      if (paidAmount > totalAmount + 0.01) {
+        alert("مجموع الدفع أكبر من إجمالي الفاتورة")
+        return
+      }
+      paymentMethod = "split"
+      changeAmount = 0
+    }
 
     const saleData = {
       customerId: selectedCustomer?.id,
       branchId: userBranchId,
+      invoiceType,
       items: cart.map(item => ({
         productId: item.product.id,
         quantity: item.quantity,
@@ -218,12 +276,14 @@ export default function POS() {
       totalAmount: parseFloat(totalAmount.toFixed(2)),
       paidAmount: parseFloat(paidAmount.toFixed(2)),
       changeAmount: parseFloat(changeAmount.toFixed(2)),
-      paymentMethod: selectedPaymentMethod,
+      paymentMethod,
+      cashAmount: parseFloat(cashAmount.toFixed(2)),
+      cardAmount: parseFloat(cardAmount.toFixed(2)),
       loyaltyPointsUsed: 0,
-      notes: selectedCustomer ? `فاتورة للعميل: ${selectedCustomer.name}` : 'فاتورة نقدية'
+      notes: selectedCustomer
+        ? `${invoiceType === "tax" ? "فاتورة ضريبية B2B" : "فاتورة"} للعميل: ${selectedCustomer.name}`
+        : "فاتورة نقدية مبسطة"
     }
-
-    console.log('Sending sale data:', saleData)
 
     try {
       await createSaleMutation.mutateAsync(saleData)
@@ -327,10 +387,45 @@ export default function POS() {
               {selectedCustomer && (
                 <p className="text-xs text-muted-foreground">
                   {selectedCustomer.phone}
+                  {(selectedCustomer as any).taxNumber
+                    ? ` · ضريبي: ${(selectedCustomer as any).taxNumber}`
+                    : ""}
                 </p>
               )}
             </div>
           </button>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setInvoiceType("simplified")}
+              className={cn(
+                "h-10 rounded-xl text-xs font-medium border transition-colors",
+                invoiceType === "simplified"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border hover:bg-muted"
+              )}
+            >
+              فاتورة مبسطة
+            </button>
+            <button
+              type="button"
+              onClick={() => setInvoiceType("tax")}
+              className={cn(
+                "h-10 rounded-xl text-xs font-medium border transition-colors",
+                invoiceType === "tax"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border hover:bg-muted"
+              )}
+            >
+              فاتورة ضريبية B2B
+            </button>
+          </div>
+          {invoiceType === "tax" && (
+            <p className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+              تتطلب عميلاً برقم ضريبي (10–15 رقم) وضريبة مفعّلة من الإعدادات
+            </p>
+          )}
         </div>
 
         {/* Cart Items */}
@@ -489,7 +584,51 @@ export default function POS() {
                 onClick={() => setSelectedPaymentMethod("credit")}
                 disabled={!selectedCustomer}
               />
+              <PaymentMethodButton
+                icon={CreditCard}
+                label="مقسّم (كاش + بطاقة)"
+                method="split"
+                selected={selectedPaymentMethod === "split"}
+                onClick={() => {
+                  setSelectedPaymentMethod("split")
+                  const half = (getGrandTotal() / 2).toFixed(2)
+                  setSplitCash(half)
+                  setSplitCard(half)
+                }}
+              />
             </div>
+
+            {selectedPaymentMethod === "split" && (
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">مبلغ الكاش</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={splitCash}
+                    onChange={(e) => setSplitCash(e.target.value)}
+                    className="w-full mt-1 h-10 px-3 border border-border rounded-xl bg-background text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">مبلغ البطاقة / شبكة</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={splitCard}
+                    onChange={(e) => setSplitCard(e.target.value)}
+                    className="w-full mt-1 h-10 px-3 border border-border rounded-xl bg-background text-sm"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-muted-foreground">
+                  المدفوع: {formatCurrency((parseFloat(splitCash) || 0) + (parseFloat(splitCard) || 0))}
+                  {" / "}
+                  المطلوب: {formatCurrency(getGrandTotal())}
+                </p>
+              </div>
+            )}
 
             {/* Total Summary */}
             <div className="bg-accent rounded-xl p-4 mb-6">

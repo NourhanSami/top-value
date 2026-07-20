@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, ArrowLeftRight, X, Loader2, Search } from "lucide-react"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -60,18 +61,43 @@ export default function InventoryTransfersPage() {
           <h1 className="text-2xl font-bold">تحويل المخزون بين الفروع</h1>
           <p className="text-sm text-muted-foreground mt-1">نقل المنتجات من فرع إلى آخر</p>
         </div>
-        <button
-          onClick={() => {
-            if (branches.length < 2) {
-              toast.error("يلزم وجود فرعين على الأقل لإتمام التحويل — أضف فرعاً من صفحة الفروع أولاً")
-              return
-            }
-            setShowCreate(true)
-          }}
-          className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" /> تحويل جديد
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            filename={`تحويلات-مخزون-${new Date().toISOString().slice(0, 10)}`}
+            title="تحويلات المخزون"
+            columns={[
+              { key: "transferNumber", label: "رقم التحويل" },
+              { key: "fromBranch", label: "من فرع" },
+              { key: "toBranch", label: "إلى فرع" },
+              { key: "user", label: "بواسطة" },
+              { key: "transferDate", label: "التاريخ" },
+              { key: "itemsCount", label: "المنتجات" },
+              { key: "status", label: "الحالة" },
+            ]}
+            rows={transfers.map((t) => ({
+              transferNumber: t.transferNumber,
+              fromBranch: t.fromBranch?.name || "",
+              toBranch: t.toBranch?.name || "",
+              user: t.user?.name || "",
+              transferDate: t.transferDate,
+              itemsCount: t.items?.length || 0,
+              status: t.status === "completed" ? "مكتمل" : "قيد التنفيذ",
+            }))}
+            dateKey="transferDate"
+          />
+          <button
+            onClick={() => {
+              if (branches.length < 2) {
+                toast.error("يلزم وجود فرعين على الأقل لإتمام التحويل — أضف فرعاً من صفحة الفروع أولاً")
+                return
+              }
+              setShowCreate(true)
+            }}
+            className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" /> تحويل جديد
+          </button>
+        </div>
       </div>
 
       <div className="flat-card p-4">

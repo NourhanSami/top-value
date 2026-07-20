@@ -31,7 +31,7 @@ import {
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import { dashboardService, saleService, productService, customerService, expenseService } from "@/services/api.service"
-import * as XLSX from "xlsx"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import api from "@/lib/api"
 
 type ReportType = "sales" | "inventory" | "profit" | "customers"
@@ -49,6 +49,20 @@ export default function Reports() {
     queryFn: () => dashboardService.getStatistics(),
   })
 
+  const { data: salesExportRes } = useQuery({
+    queryKey: ["reports-sales-export"],
+    queryFn: () => api.get("/sales", { params: { limit: 500 } }).then((r) => r.data),
+  })
+  const salesExportRows = (salesExportRes?.data || []).map((s: any) => ({
+    invoiceNumber: s.invoiceNumber,
+    customer: s.customer?.name || "—",
+    saleDate: s.saleDate,
+    totalAmount: Number(s.totalAmount),
+    paidAmount: Number(s.paidAmount),
+    paymentMethod: s.paymentMethod,
+    paymentStatus: s.paymentStatus,
+  }))
+
   const dash = statsResponse?.data
   const topSales = Number(dash?.sales?.thisMonth || dash?.sales?.allTime || 0)
   const topOrders = Number(dash?.sales?.totalOrders || dash?.sales?.allTimeOrders || 0)
@@ -62,27 +76,6 @@ export default function Reports() {
     { id: "customers" as ReportType, label: "تقرير العملاء", icon: Users },
   ]
 
-  const handleExportPDF = () => {
-    window.print()
-  }
-
-  const handleExportExcel = async () => {
-    try {
-      const salesRes = await api.get('/sales', { params: { limit: 999 } })
-      const sales = salesRes.data.data || []
-      const rows = [
-        ["رقم الفاتورة", "العميل", "التاريخ", "الإجمالي", "المدفوع", "طريقة الدفع", "الحالة"],
-        ...sales.map((s: any) => [s.invoiceNumber, s.customer?.name || "—", new Date(s.saleDate).toLocaleDateString('ar-EG'), Number(s.totalAmount), Number(s.paidAmount), s.paymentMethod, s.paymentStatus]),
-      ]
-      const ws = XLSX.utils.aoa_to_sheet(rows)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, "المبيعات")
-      XLSX.writeFile(wb, `تقرير-المبيعات-${new Date().toISOString().split('T')[0]}.xlsx`)
-    } catch {
-      alert("خطأ أثناء التصدير")
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -93,22 +86,21 @@ export default function Reports() {
             تقارير تفصيلية لجميع جوانب النظام
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-2 px-4 h-10 bg-success text-success-foreground rounded-xl hover:bg-success/90 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            <span className="text-sm font-medium">Excel</span>
-          </button>
-          <button
-            onClick={handleExportPDF}
-            className="flex items-center gap-2 px-4 h-10 bg-destructive text-destructive-foreground rounded-xl hover:bg-destructive/90 transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            <span className="text-sm font-medium">PDF</span>
-          </button>
-        </div>
+        <ExportMenu
+          filename={`تقرير-${activeReport}-${new Date().toISOString().slice(0, 10)}`}
+          title="تقرير المبيعات"
+          columns={[
+            { key: "invoiceNumber", label: "رقم الفاتورة" },
+            { key: "customer", label: "العميل" },
+            { key: "saleDate", label: "التاريخ" },
+            { key: "totalAmount", label: "الإجمالي" },
+            { key: "paidAmount", label: "المدفوع" },
+            { key: "paymentMethod", label: "طريقة الدفع" },
+            { key: "paymentStatus", label: "الحالة" },
+          ]}
+          rows={salesExportRows}
+          dateKey="saleDate"
+        />
       </div>
 
       {/* Quick Stats */}

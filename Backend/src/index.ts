@@ -80,6 +80,9 @@ import inventoryTransferRoutes from './routes/inventoryTransferRoutes';
 import emailRoutes from './routes/emailRoutes';
 import capitalRoutes from './routes/capitalRoutes';
 import activityLogRoutes from './routes/activityLogRoutes';
+import treasuryRoutes from './routes/treasuryRoutes';
+import driverRouteRoutes from './routes/driverRouteRoutes';
+import roleRoutes from './routes/roleRoutes';
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -93,6 +96,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/roles', roleRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/returns', saleReturnRoutes);
 app.use('/api/damaged-items', damagedItemRoutes);
@@ -105,6 +109,8 @@ app.use('/api/inventory-transfers', inventoryTransferRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/capital', capitalRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/treasury', treasuryRoutes);
+app.use('/api/driver-routes', driverRouteRoutes);
 
 // Error handling
 app.use(notFoundHandler);

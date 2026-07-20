@@ -89,18 +89,29 @@ export const login = async (
     if (user.menuAccess) {
       try { menuAccess = JSON.parse(user.menuAccess); } catch { menuAccess = []; }
     }
-    // Fall back to role-based defaults so the sidebar isn't empty on first login
+    // Fall back to role menuAccess (custom roles) then hardcoded system defaults
     if (!menuAccess.length) {
-      const roleName = user.roles[0]?.role.name || 'employee';
-      const defaults: Record<string, string[]> = {
-        admin: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','hr','settings'],
-        manager: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
-        cashier: ['pos','sales','returns','customers'],
-        employee: ['returns','customers'],
-        accountant: ['dashboard','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
-      };
-      menuAccess = defaults[roleName] || ['dashboard','customers','returns'];
+      const primaryRole = user.roles[0]?.role;
+      if (primaryRole?.menuAccess) {
+        try {
+          const parsed = JSON.parse(primaryRole.menuAccess);
+          if (Array.isArray(parsed) && parsed.length) menuAccess = parsed.map(String);
+        } catch { /* ignore */ }
+      }
+      if (!menuAccess.length) {
+        const roleName = primaryRole?.name || 'employee';
+        const defaults: Record<string, string[]> = {
+          admin: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','hr','settings'],
+          manager: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
+          cashier: ['pos','sales','returns','customers'],
+          employee: ['returns','customers'],
+          accountant: ['dashboard','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
+        };
+        menuAccess = defaults[roleName] || ['dashboard','customers','returns'];
+      }
     }
+
+    const primaryRole = user.roles[0]?.role;
 
     // Send response
     res.json({
@@ -113,7 +124,8 @@ export const login = async (
           email: user.email,
           phone: user.phone,
           avatar: user.avatar,
-          role: user.roles[0]?.role.name || 'employee',
+          role: primaryRole?.name || 'employee',
+          roleDisplayName: primaryRole?.displayName || primaryRole?.name || 'موظف',
           branch_id: user.branchId,
           branch_name: user.branch?.name,
           permissions,

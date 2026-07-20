@@ -298,6 +298,11 @@ export const expenseService = {
     return response.data;
   },
 
+  createCategory: async (data: { name: string; nameEn?: string; description?: string }) => {
+    const response = await api.post<ApiResponse<any>>('/expenses/categories', data);
+    return response.data;
+  },
+
   create: async (data: any) => {
     const response = await api.post<ApiResponse<any>>('/expenses', data);
     return response.data;

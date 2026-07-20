@@ -1,9 +1,9 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { TrendingUp, TrendingDown, DollarSign, Loader2, Download } from "lucide-react"
+import { TrendingUp, TrendingDown, DollarSign, Loader2 } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import api from "@/lib/api"
-import * as XLSX from "xlsx"
 
 const plApi = {
   getData: (from: string, to: string) =>
@@ -44,25 +44,13 @@ export default function ProfitLossReport() {
 
   const isProfit = netProfit >= 0
 
-  const exportToExcel = () => {
-    const rows = [
-      ["تقرير الأرباح والخسائر", "", ""],
-      [`من: ${dateFrom}`, `إلى: ${dateTo}`, ""],
-      ["", "", ""],
-      ["البند", "المبلغ", "النسبة"],
-      ["إجمالي الإيرادات (المبيعات)", totalRevenue, "100%"],
-      ["تكلفة البضاعة المباعة (COGS)", totalCOGS, `${totalRevenue > 0 ? ((totalCOGS / totalRevenue) * 100).toFixed(1) : 0}%`],
-      ["مجمل الربح", grossProfit, `${grossMargin.toFixed(1)}%`],
-      ["", "", ""],
-      ["المصروفات التشغيلية", totalExpenses, `${totalRevenue > 0 ? ((totalExpenses / totalRevenue) * 100).toFixed(1) : 0}%`],
-      ["", "", ""],
-      [isProfit ? "صافي الربح" : "صافي الخسارة", netProfit, `${netMargin.toFixed(1)}%`],
-    ]
-    const ws = XLSX.utils.aoa_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "P&L")
-    XLSX.writeFile(wb, `تقرير-الأرباح-والخسائر-${dateFrom}-${dateTo}.xlsx`)
-  }
+  const exportRows = [
+    { item: "إجمالي الإيرادات (المبيعات)", amount: totalRevenue, percent: "100%" },
+    { item: "تكلفة البضاعة المباعة (COGS)", amount: totalCOGS, percent: `${totalRevenue > 0 ? ((totalCOGS / totalRevenue) * 100).toFixed(1) : 0}%` },
+    { item: "مجمل الربح", amount: grossProfit, percent: `${grossMargin.toFixed(1)}%` },
+    { item: "المصروفات التشغيلية", amount: totalExpenses, percent: `${totalRevenue > 0 ? ((totalExpenses / totalRevenue) * 100).toFixed(1) : 0}%` },
+    { item: isProfit ? "صافي الربح" : "صافي الخسارة", amount: netProfit, percent: `${netMargin.toFixed(1)}%` },
+  ]
 
   return (
     <div className="space-y-6">
@@ -71,9 +59,18 @@ export default function ProfitLossReport() {
           <h1 className="text-2xl font-bold">تقرير الأرباح والخسائر (P&L)</h1>
           <p className="text-sm text-muted-foreground mt-1">ملخص مالي شامل للإيرادات والمصروفات والأرباح</p>
         </div>
-        <button onClick={exportToExcel} className="flex items-center gap-2 px-4 h-10 border border-border rounded-xl hover:bg-muted text-sm font-medium">
-          <Download className="w-4 h-4" /> تصدير Excel
-        </button>
+        <ExportMenu
+          filename={`تقرير-الأرباح-والخسائر-${dateFrom}-${dateTo}`}
+          title="تقرير الأرباح والخسائر"
+          subtitle={`من ${dateFrom} إلى ${dateTo}`}
+          columns={[
+            { key: "item", label: "البند" },
+            { key: "amount", label: "المبلغ" },
+            { key: "percent", label: "النسبة" },
+          ]}
+          rows={exportRows}
+          showDateFilter={false}
+        />
       </div>
 
       {/* Date Range */}

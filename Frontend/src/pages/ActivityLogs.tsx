@@ -10,6 +10,7 @@ import {
   Settings,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import { userService } from "@/services/api.service"
@@ -179,6 +180,26 @@ export default function ActivityLogs() {
               <option key={u.id} value={u.id}>{u.name}</option>
             ))}
           </select>
+
+          <ExportMenu
+            filename={`سجل-نشاط-${new Date().toISOString().slice(0, 10)}`}
+            title="سجل النشاط"
+            columns={[
+              { key: "createdAt", label: "التاريخ" },
+              { key: "user", label: "المستخدم" },
+              { key: "action", label: "الإجراء" },
+              { key: "entityType", label: "الكيان" },
+              { key: "description", label: "الوصف" },
+            ]}
+            rows={logs.map((log: any) => ({
+              createdAt: log.createdAt || log.created_at || "",
+              user: log.user?.name || "",
+              action: getActivityTypeLabel(log.action),
+              entityType: log.entityType || log.entity_type || "",
+              description: log.description || "",
+            }))}
+            dateKey="createdAt"
+          />
         </div>
       </div>
 

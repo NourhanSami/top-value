@@ -46,6 +46,7 @@ export interface Customer {
   name: string
   phone: string
   email?: string
+  taxNumber?: string
   type: string
   companyName?: string
   creditLimit: number

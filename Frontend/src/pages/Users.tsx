@@ -6,6 +6,7 @@ import {
   UserCheck, Shield, Mail, Building2, Loader2,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn } from "@/lib/utils"
 import { userService } from "@/services/api.service"
 import { UserDialog } from "@/components/dialogs"
@@ -140,6 +141,29 @@ export default function Users() {
             <option value="inactive">غير نشط</option>
           </select>
 
+          <ExportMenu
+            filename={`مستخدمين-${new Date().toISOString().slice(0, 10)}`}
+            title="المستخدمين"
+            columns={[
+              { key: "name", label: "الاسم" },
+              { key: "email", label: "البريد" },
+              { key: "phone", label: "الهاتف" },
+              { key: "role", label: "الدور" },
+              { key: "branch", label: "الفرع" },
+              { key: "isActive", label: "الحالة" },
+              { key: "createdAt", label: "تاريخ الإضافة" },
+            ]}
+            rows={users.map((u: any) => ({
+              name: u.name,
+              email: u.email || "",
+              phone: u.phone || "",
+              role: getPrimaryRole(u).displayName || "",
+              branch: u.branch?.name || "",
+              isActive: (u.isActive ?? u.is_active) ? "نشط" : "غير نشط",
+              createdAt: u.createdAt || u.created_at || "",
+            }))}
+            dateKey="createdAt"
+          />
           <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium"

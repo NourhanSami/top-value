@@ -530,3 +530,47 @@ export const getAllExpenseCategories = async (req: Request, res: Response, next:
     next(error);
   }
 };
+
+/**
+ * @route   POST /api/expenses/categories
+ * @desc    Create expense category
+ */
+export const createExpenseCategory = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { name, nameEn, description, parentId } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'اسم التصنيف مطلوب' });
+    }
+    const existing = await prisma.expenseCategory.findFirst({
+      where: { name: String(name).trim(), deletedAt: null },
+    });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'التصنيف موجود مسبقاً' });
+    }
+    const category = await prisma.expenseCategory.create({
+      data: {
+        name: String(name).trim(),
+        nameEn: nameEn || null,
+        description: description || null,
+        parentId: parentId ? Number(parentId) : null,
+        isActive: true,
+      },
+    });
+    res.status(201).json({ success: true, message: 'تم إضافة التصنيف', data: category });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Ensure fuel category exists (idempotent helper used by seed/UI)
+ */
+export const ensureFuelExpenseCategory = async () => {
+  const existing = await prisma.expenseCategory.findFirst({
+    where: { OR: [{ name: 'وقود' }, { nameEn: 'fuel' }], deletedAt: null },
+  });
+  if (existing) return existing;
+  return prisma.expenseCategory.create({
+    data: { name: 'وقود', nameEn: 'fuel', description: 'تكلفة المحروقات والوقود', isActive: true },
+  });
+};

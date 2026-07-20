@@ -53,9 +53,14 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
 
   const applyRoleDefaults = (roleId: string) => {
     const role = roles.find((r) => String(r.id) === roleId)
+    if (Array.isArray(role?.menuAccess) && role.menuAccess.length) {
+      return role.menuAccess.filter((k: string) =>
+        ALL_MENU_KEYS.includes(k as MenuSectionKey)
+      ) as MenuSectionKey[]
+    }
     const defaults = role?.name
-      ? ROLE_DEFAULT_MENUS[role.name] || [...ALL_MENU_KEYS]
-      : [...ALL_MENU_KEYS]
+      ? ROLE_DEFAULT_MENUS[role.name] || ["dashboard", "customers", "returns"]
+      : ["dashboard", "customers", "returns"]
     return defaults as MenuSectionKey[]
   }
 
@@ -66,7 +71,6 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
       const roleList = user.roles || []
       const firstRole = roleList[0]?.role || roleList[0]
       const savedMenus = Array.isArray(user.menuAccess) ? user.menuAccess : []
-      const roleName = firstRole?.name
       setFormData({
         name: user.name || "",
         email: user.email || "",
@@ -78,9 +82,7 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
         menuAccess:
           savedMenus.length > 0
             ? savedMenus.filter((k: string) => ALL_MENU_KEYS.includes(k as MenuSectionKey))
-            : roleName && ROLE_DEFAULT_MENUS[roleName]
-              ? [...ROLE_DEFAULT_MENUS[roleName]]
-              : [...ALL_MENU_KEYS],
+            : applyRoleDefaults(firstRole?.id ? String(firstRole.id) : ""),
       })
     } else if (mode === "create") {
       const defaultRole =
@@ -94,9 +96,7 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
         branchId: branches[0] ? String(branches[0].id) : "",
         roleId,
         isActive: true,
-        menuAccess: defaultRole?.name && ROLE_DEFAULT_MENUS[defaultRole.name]
-          ? [...ROLE_DEFAULT_MENUS[defaultRole.name]]
-          : ["dashboard", "customers"],
+        menuAccess: roleId ? applyRoleDefaults(roleId) : ["dashboard", "customers"],
       })
     }
   }, [isOpen, mode, userResponse, roles.length, branches.length])

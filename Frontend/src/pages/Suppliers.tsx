@@ -5,6 +5,7 @@ import {
   Search, Plus, MoreVertical, Edit, Trash2, Phone, Mail, DollarSign, TrendingUp, Users, Building2, X, Loader2,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency } from "@/lib/utils"
 import { supplierService } from "@/services/api.service"
 import toast from "react-hot-toast"
@@ -143,6 +144,27 @@ export default function Suppliers() {
               />
             </div>
           </div>
+          <ExportMenu
+            filename={`موردين-${new Date().toISOString().slice(0, 10)}`}
+            title="الموردين"
+            columns={[
+              { key: "name", label: "اسم المورد" },
+              { key: "phone", label: "الهاتف" },
+              { key: "email", label: "البريد" },
+              { key: "address", label: "العنوان" },
+              { key: "currentBalance", label: "الرصيد" },
+              { key: "createdAt", label: "تاريخ الإضافة" },
+            ]}
+            rows={suppliers.map((s) => ({
+              name: s.name,
+              phone: s.phone,
+              email: s.email || "",
+              address: s.address || "",
+              currentBalance: Number(s.currentBalance || 0),
+              createdAt: s.createdAt,
+            }))}
+            dateKey="createdAt"
+          />
           <button onClick={openCreate} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90">
             <Plus className="w-4 h-4" />
             <span className="text-sm font-medium">إضافة مورد</span>

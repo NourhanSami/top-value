@@ -16,12 +16,15 @@ import {
   Star,
   X,
   Loader2,
+  FileText,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency } from "@/lib/utils"
 import { customerService } from "@/services/api.service"
 import toast from "react-hot-toast"
 import type { Customer } from "@/types"
+import CustomerStatementDialog from "@/components/dialogs/CustomerStatementDialog"
 
 export default function Customers() {
   const queryClient = useQueryClient()
@@ -29,9 +32,16 @@ export default function Customers() {
   const [activeFilter, setActiveFilter] = useState<"all" | "true" | "false">("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const [addForm, setAddForm] = useState({ name: "", phone: "", email: "", address: "", creditLimit: "" })
+  const [addForm, setAddForm] = useState({
+    name: "", phone: "", email: "", address: "", creditLimit: "",
+    type: "individual", companyName: "", taxNumber: "",
+  })
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
-  const [editForm, setEditForm] = useState({ name: "", phone: "", email: "", notes: "", customerTier: "bronze", isActive: true })
+  const [editForm, setEditForm] = useState({
+    name: "", phone: "", email: "", notes: "", customerTier: "bronze", isActive: true,
+    type: "individual", companyName: "", taxNumber: "",
+  })
+  const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null)
 
   // Fetch customers
   const { data: customersResponse, isLoading } = useQuery({
@@ -53,6 +63,20 @@ export default function Customers() {
   const customers = customersResponse?.data || []
   const stats = statsResponse?.data
 
+  const tierLabel: Record<string, string> = {
+    bronze: "برونزي", silver: "فضي", gold: "ذهبي", platinum: "بلاتيني",
+  }
+  const exportRows = customers.map((c: Customer) => ({
+    name: c.name,
+    phone: c.phone,
+    email: c.email || "",
+    type: c.type === "company" ? "شركة" : "فرد",
+    taxNumber: c.taxNumber || "",
+    tier: tierLabel[c.customerTier] || c.customerTier || "",
+    isActive: c.isActive ? "نشط" : "غير نشط",
+    createdAt: c.createdAt,
+  }))
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (id: number) => customerService.delete(id),
@@ -68,7 +92,7 @@ export default function Customers() {
       toast.success("تم إضافة العميل بنجاح")
       queryClient.invalidateQueries({ queryKey: ["customers"] })
       setShowAddDialog(false)
-      setAddForm({ name: "", phone: "", email: "", address: "", creditLimit: "" })
+      setAddForm({ name: "", phone: "", email: "", address: "", creditLimit: "", type: "individual", companyName: "", taxNumber: "" })
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || "حدث خطأ أثناء إضافة العميل")
@@ -97,6 +121,9 @@ export default function Customers() {
       notes: customer.notes || "",
       customerTier: customer.customerTier,
       isActive: customer.isActive,
+      type: customer.type || "individual",
+      companyName: customer.companyName || "",
+      taxNumber: customer.taxNumber || "",
     })
   }
 
@@ -142,7 +169,7 @@ export default function Customers() {
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="البحث في العملاء..."
+                placeholder="بحث بالاسم أو رقم العميل أو جزء منه..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full h-10 pr-11 pl-4 bg-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -182,6 +209,22 @@ export default function Customers() {
           </div>
 
           {/* Add Customer */}
+          <ExportMenu
+            filename={`عملاء-${new Date().toISOString().slice(0, 10)}`}
+            title="العملاء"
+            columns={[
+              { key: "name", label: "اسم العميل" },
+              { key: "phone", label: "الهاتف" },
+              { key: "email", label: "البريد" },
+              { key: "type", label: "النوع" },
+              { key: "taxNumber", label: "الرقم الضريبي" },
+              { key: "tier", label: "الدرجة" },
+              { key: "isActive", label: "الحالة" },
+              { key: "createdAt", label: "تاريخ التسجيل" },
+            ]}
+            rows={exportRows}
+            dateKey="createdAt"
+          />
           <button
             onClick={() => setShowAddDialog(true)}
             className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
@@ -231,6 +274,14 @@ export default function Customers() {
                   >
                     <td className="py-4 px-4">
                       <p className="font-medium text-foreground">{customer.name}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {customer.type === "company" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-info/10 text-info">شركة</span>
+                        )}
+                        {customer.taxNumber && (
+                          <span className="text-[10px] text-muted-foreground font-mono">ضريبي: {customer.taxNumber}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
@@ -271,6 +322,7 @@ export default function Customers() {
                         customer={customer}
                         onDelete={() => deleteMutation.mutate(customer.id)}
                         onEdit={() => openEdit(customer)}
+                        onStatement={() => setStatementCustomer(customer)}
                       />
                     </td>
                   </tr>
@@ -292,11 +344,33 @@ export default function Customers() {
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">الاسم *</label>
               <input type="text" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
                 className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">نوع العميل</label>
+              <select value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}
+                className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="individual">فرد</option>
+                <option value="company">شركة (B2B)</option>
+              </select>
+            </div>
+            {editForm.type === "company" && (
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">اسم المنشأة</label>
+                <input type="text" value={editForm.companyName} onChange={e => setEditForm(f => ({ ...f, companyName: e.target.value }))}
+                  className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">الرقم الضريبي</label>
+              <input type="text" value={editForm.taxNumber}
+                onChange={e => setEditForm(f => ({ ...f, taxNumber: e.target.value.replace(/\D/g, "").slice(0, 15) }))}
+                className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+                placeholder="10–15 رقم" />
             </div>
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">الهاتف</label>
@@ -333,7 +407,24 @@ export default function Customers() {
             <button
               onClick={() => {
                 if (!editForm.name.trim()) { toast.error("الاسم مطلوب"); return }
-                editMutation.mutate({ id: editingCustomer.id, data: { name: editForm.name, phone: editForm.phone || undefined, email: editForm.email || undefined, notes: editForm.notes || undefined, customerTier: editForm.customerTier, isActive: editForm.isActive } })
+                if (editForm.taxNumber && !/^\d{10,15}$/.test(editForm.taxNumber)) {
+                  toast.error("الرقم الضريبي يجب أن يكون 10–15 رقم")
+                  return
+                }
+                editMutation.mutate({
+                  id: editingCustomer.id,
+                  data: {
+                    name: editForm.name,
+                    phone: editForm.phone || undefined,
+                    email: editForm.email || undefined,
+                    notes: editForm.notes || undefined,
+                    customerTier: editForm.customerTier,
+                    isActive: editForm.isActive,
+                    type: editForm.type,
+                    companyName: editForm.companyName || undefined,
+                    taxNumber: editForm.taxNumber || undefined,
+                  },
+                })
               }}
               disabled={editMutation.isPending}
               className="flex-1 h-10 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
@@ -367,7 +458,42 @@ export default function Customers() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">رقم الهاتف</label>
+              <label className="block text-sm font-medium text-foreground mb-1">نوع العميل</label>
+              <select
+                value={addForm.type}
+                onChange={e => setAddForm(f => ({ ...f, type: e.target.value }))}
+                className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="individual">فرد</option>
+                <option value="company">شركة (B2B)</option>
+              </select>
+            </div>
+            {addForm.type === "company" && (
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">اسم المنشأة</label>
+                <input
+                  type="text"
+                  value={addForm.companyName}
+                  onChange={e => setAddForm(f => ({ ...f, companyName: e.target.value }))}
+                  className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="الاسم التجاري"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                الرقم الضريبي {addForm.type === "company" ? "(للفاتورة الضريبية)" : "(اختياري)"}
+              </label>
+              <input
+                type="text"
+                value={addForm.taxNumber}
+                onChange={e => setAddForm(f => ({ ...f, taxNumber: e.target.value.replace(/\D/g, "").slice(0, 15) }))}
+                className="w-full h-10 px-4 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+                placeholder="15 رقم"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">رقم الهاتف *</label>
               <input
                 type="text"
                 value={addForm.phone}
@@ -412,10 +538,18 @@ export default function Customers() {
             <button
               onClick={() => {
                 if (!addForm.name.trim()) { toast.error("اسم العميل مطلوب"); return }
+                if (!addForm.phone.trim()) { toast.error("رقم الهاتف مطلوب"); return }
+                if (addForm.taxNumber && !/^\d{10,15}$/.test(addForm.taxNumber)) {
+                  toast.error("الرقم الضريبي يجب أن يكون 10–15 رقم")
+                  return
+                }
                 addMutation.mutate({
                   name: addForm.name,
-                  phone: addForm.phone || undefined,
+                  phone: addForm.phone,
                   email: addForm.email || undefined,
+                  type: addForm.type,
+                  companyName: addForm.companyName || undefined,
+                  taxNumber: addForm.taxNumber || undefined,
                   address: addForm.address || undefined,
                   creditLimit: addForm.creditLimit ? parseFloat(addForm.creditLimit) : undefined,
                 })
@@ -436,6 +570,12 @@ export default function Customers() {
         </div>
       </div>
     )}
+    <CustomerStatementDialog
+      isOpen={!!statementCustomer}
+      customerId={statementCustomer?.id || null}
+      customerName={statementCustomer?.name}
+      onClose={() => setStatementCustomer(null)}
+    />
   </>
   )
 }
@@ -444,9 +584,10 @@ interface CustomerActionsMenuProps {
   customer: Customer
   onDelete: () => void
   onEdit: () => void
+  onStatement: () => void
 }
 
-function CustomerActionsMenu({ onDelete, onEdit }: CustomerActionsMenuProps) {
+function CustomerActionsMenu({ onDelete, onEdit, onStatement }: CustomerActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const handleDelete = () => {
@@ -472,6 +613,13 @@ function CustomerActionsMenu({ onDelete, onEdit }: CustomerActionsMenuProps) {
             onClick={() => setIsOpen(false)}
           />
           <div className="absolute left-0 top-full mt-1 w-48 flat-card p-2 z-20 shadow-flat-lg">
+            <button
+              onClick={() => { onStatement(); setIsOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted rounded-lg transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              كشف حساب
+            </button>
             <button
               onClick={() => { onEdit(); setIsOpen(false) }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted rounded-lg transition-colors"

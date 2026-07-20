@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, Building, Pencil, Trash2, Loader2, X, Landmark, Search } from "lucide-react"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { formatCurrency } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -74,9 +75,34 @@ export default function BankAccountsPage() {
           <h1 className="text-2xl font-bold">الحسابات البنكية</h1>
           <p className="text-sm text-muted-foreground mt-1">إدارة الحسابات البنكية للمنشأة</p>
         </div>
-        <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
-          <Plus className="w-4 h-4" /> إضافة حساب
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            filename={`حسابات-بنكية-${new Date().toISOString().slice(0, 10)}`}
+            title="الحسابات البنكية"
+            columns={[
+              { key: "name", label: "اسم الحساب" },
+              { key: "bankName", label: "البنك" },
+              { key: "accountNumber", label: "رقم الحساب" },
+              { key: "iban", label: "IBAN" },
+              { key: "balance", label: "الرصيد" },
+              { key: "currency", label: "العملة" },
+              { key: "createdAt", label: "تاريخ الإضافة" },
+            ]}
+            rows={accounts.map((a) => ({
+              name: a.name,
+              bankName: a.bankName,
+              accountNumber: a.accountNumber,
+              iban: a.iban || "",
+              balance: Number(a.balance || 0),
+              currency: a.currency || "",
+              createdAt: (a as any).createdAt || (a as any).created_at || "",
+            }))}
+            dateKey="createdAt"
+          />
+          <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
+            <Plus className="w-4 h-4" /> إضافة حساب
+          </button>
+        </div>
       </div>
 
       <div className="relative max-w-md">

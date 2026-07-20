@@ -19,6 +19,7 @@ import {
   ClipboardList,
   UserCog,
   UsersRound,
+  Shield,
   Settings,
   LogOut,
   ChevronDown,
@@ -85,6 +86,7 @@ const navigationItems: NavItem[] = [
       { label: "المخازن", icon: Building2, path: "/warehouses" },
       { label: "الهوالك", icon: AlertTriangle, path: "/damaged-items" },
       { label: "تحويل المخزون", icon: ArrowLeftRight, path: "/inventory-transfers" },
+      { label: "خط سير السائق / الفيصل", icon: Truck, path: "/driver-routes" },
     ],
   },
   {
@@ -104,6 +106,7 @@ const navigationItems: NavItem[] = [
       { label: "سندات القبض والدفع", icon: Receipt, path: "/vouchers" },
       { label: "الأقساط والديون", icon: Calendar, path: "/installments" },
       { label: "الحسابات البنكية", icon: Landmark, path: "/bank-accounts" },
+      { label: "الخزنة والسيولة", icon: Wallet, path: "/treasury" },
       { label: "المصروفات", icon: DollarSign, path: "/expenses" },
       { label: "رأس المال", icon: Wallet, path: "/capital-setup" },
     ],
@@ -129,6 +132,7 @@ const navigationItems: NavItem[] = [
     section: "hr",
     children: [
       { label: "المستخدمين", icon: UsersRound, path: "/users" },
+      { label: "أنواع المستخدمين", icon: Shield, path: "/roles" },
     ],
   },
   {

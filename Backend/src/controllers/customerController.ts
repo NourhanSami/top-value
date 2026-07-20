@@ -5,13 +5,13 @@ import { z } from 'zod';
 const prisma = new PrismaClient();
 
 // Validation schema
-const createCustomerSchema = z.object({
+const createCustomerBaseSchema = z.object({
   name: z.string().min(3, 'الاسم يجب أن يكون 3 أحرف على الأقل').max(100),
   phone: z.string().regex(/^[0-9+\-() ]{10,20}$/, 'رقم الهاتف غير صحيح'),
-  email: z.string().email('البريد الإلكتروني غير صحيح').optional(),
-  taxNumber: z.string().optional(),
+  email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
+  taxNumber: z.string().optional().or(z.literal('')),
   type: z.enum(['individual', 'company']).default('individual'),
-  companyName: z.string().optional(),
+  companyName: z.string().optional().or(z.literal('')),
   creditLimit: z.number().nonnegative().default(0),
   currentBalance: z.number().default(0),
   customerTier: z.enum(['bronze', 'silver', 'gold', 'platinum']).default('bronze'),
@@ -28,9 +28,24 @@ const createCustomerSchema = z.object({
   })).optional()
 });
 
-const updateCustomerSchema = createCustomerSchema.partial().extend({
+function refineTaxNumber(data: { taxNumber?: string }, ctx: z.RefinementCtx) {
+  if (data.taxNumber) {
+    const cleaned = data.taxNumber.replace(/\s+/g, '');
+    if (!/^\d{10,15}$/.test(cleaned)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'الرقم الضريبي يجب أن يكون من 10 إلى 15 رقم',
+        path: ['taxNumber'],
+      });
+    }
+  }
+}
+
+const createCustomerSchema = createCustomerBaseSchema.superRefine(refineTaxNumber);
+
+const updateCustomerSchema = createCustomerBaseSchema.partial().extend({
   phone: z.string().regex(/^[0-9+\-() ]{10,20}$/, 'رقم الهاتف غير صحيح').optional()
-});
+}).superRefine(refineTaxNumber);
 
 /**
  * @route   GET /api/customers
@@ -59,11 +74,19 @@ export const getAllCustomers = async (req: Request, res: Response, next: NextFun
     const where: any = { deletedAt: null };
 
     if (search) {
-      where.OR = [
-        { name: { contains: search as string } },
-        { phone: { contains: search as string } },
-        { email: { contains: search as string } }
+      const q = String(search).trim();
+      const or: any[] = [
+        { name: { contains: q } },
+        { phone: { contains: q } },
+        { email: { contains: q } },
+        { companyName: { contains: q } },
       ];
+      // Allow search by numeric customer ID
+      const asId = parseInt(q, 10);
+      if (!Number.isNaN(asId) && String(asId) === q) {
+        or.push({ id: asId });
+      }
+      where.OR = or;
     }
 
     if (type) {
@@ -252,6 +275,11 @@ export const createCustomer = async (req: Request, res: Response, next: NextFunc
 
     // Separate addresses from customer data
     const { addresses, ...customerData } = validatedData;
+    if (customerData.taxNumber) {
+      customerData.taxNumber = customerData.taxNumber.replace(/\s+/g, '');
+    }
+    if (customerData.email === '') customerData.email = undefined;
+    if (customerData.companyName === '') customerData.companyName = undefined;
 
     const customer = await prisma.customer.create({
       data: {
@@ -508,6 +536,125 @@ export const addCustomerAddress = async (req: Request, res: Response, next: Next
       success: true,
       message: 'تم إضافة العنوان بنجاح',
       data: address
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   GET /api/customers/:id/statement
+ * @desc    Full customer statement: purchases + payments timeline
+ */
+export const getCustomerStatement = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { dateFrom, dateTo } = req.query;
+
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      include: { addresses: true },
+    });
+    if (!customer || customer.deletedAt) {
+      return res.status(404).json({ success: false, message: 'العميل غير موجود' });
+    }
+
+    const dateFilter: any = {};
+    if (dateFrom) dateFilter.gte = new Date(String(dateFrom));
+    if (dateTo) {
+      const to = new Date(String(dateTo));
+      to.setHours(23, 59, 59, 999);
+      dateFilter.lte = to;
+    }
+
+    const saleWhere: any = { customerId: id, deletedAt: null };
+    if (dateFrom || dateTo) saleWhere.saleDate = dateFilter;
+
+    const voucherWhere: any = { customerId: id };
+    if (dateFrom || dateTo) voucherWhere.voucherDate = dateFilter;
+
+    const [sales, vouchers] = await Promise.all([
+      prisma.sale.findMany({
+        where: saleWhere,
+        include: {
+          items: { include: { product: { select: { id: true, name: true, sku: true } } } },
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: { saleDate: 'asc' },
+      }),
+      prisma.paymentVoucher.findMany({
+        where: voucherWhere,
+        include: { user: { select: { id: true, name: true } }, bankAccount: true },
+        orderBy: { voucherDate: 'asc' },
+      }),
+    ]);
+
+    const movements = [
+      ...sales.map((s) => ({
+        id: `sale-${s.id}`,
+        type: 'purchase' as const,
+        typeLabel: 'مشترى / فاتورة',
+        date: s.saleDate,
+        reference: s.invoiceNumber,
+        description: `فاتورة بيع ${s.invoiceNumber}`,
+        debit: Number(s.totalAmount),
+        credit: Number(s.paidAmount),
+        paymentMethod: s.paymentMethod,
+        cashAmount: Number((s as any).cashAmount || 0),
+        cardAmount: Number((s as any).cardAmount || 0),
+        balanceEffect: Number(s.totalAmount) - Number(s.paidAmount),
+        details: s.items.map((i) => ({
+          product: i.product?.name,
+          qty: i.quantity,
+          price: Number(i.unitPrice),
+          total: Number(i.totalAmount),
+        })),
+        raw: s,
+      })),
+      ...vouchers.map((v) => ({
+        id: `voucher-${v.id}`,
+        type: v.voucherType === 'receipt' || v.voucherType === 'in' ? ('payment' as const) : ('payment_out' as const),
+        typeLabel: (v.voucherType === 'receipt' || v.voucherType === 'in') ? 'سداد / قبض' : 'سند دفع',
+        date: v.voucherDate,
+        reference: v.voucherNumber,
+        description: v.notes || `سند ${v.voucherNumber}`,
+        debit: 0,
+        credit: Number(v.amount),
+        paymentMethod: v.paymentMethod,
+        cashAmount: v.paymentMethod === 'cash' ? Number(v.amount) : 0,
+        cardAmount: v.paymentMethod === 'card' || v.paymentMethod === 'transfer' ? Number(v.amount) : 0,
+        balanceEffect: (v.voucherType === 'receipt' || v.voucherType === 'in') ? -Number(v.amount) : Number(v.amount),
+        details: [],
+        raw: v,
+      })),
+    ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let running = 0;
+    const withBalance = movements.map((m) => {
+      running += m.balanceEffect;
+      return { ...m, runningBalance: running };
+    });
+
+    const totalPurchases = sales.reduce((s, x) => s + Number(x.totalAmount), 0);
+    const totalPaidOnSales = sales.reduce((s, x) => s + Number(x.paidAmount), 0);
+    const totalReceipts = vouchers
+      .filter((v) => v.voucherType === 'receipt' || v.voucherType === 'in')
+      .reduce((s, x) => s + Number(x.amount), 0);
+
+    res.json({
+      success: true,
+      data: {
+        customer,
+        period: { dateFrom: dateFrom || null, dateTo: dateTo || null },
+        summary: {
+          totalPurchases,
+          totalPaidOnSales,
+          totalReceipts,
+          currentBalance: Number(customer.currentBalance),
+          movementsCount: withBalance.length,
+        },
+        movements: withBalance,
+      },
     });
   } catch (error) {
     next(error);

@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 import InvoicePreviewDialog from '@/components/dialogs/InvoicePreviewDialog'
+import { ExportMenu } from '@/components/ui/ExportMenu'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 import { formatCurrency } from '@/lib/utils'
@@ -39,25 +40,21 @@ export default function Sales() {
   const stats = statsRes?.data
   const sales = salesData?.data || []
 
-  const handleExport = () => {
-    if (!sales.length) {
-      toast.error('لا توجد بيانات للتصدير')
-      return
-    }
-    const rows = sales.map((s: any) => ({
-      'رقم الفاتورة': s.invoiceNumber,
-      'التاريخ': new Date(s.saleDate).toLocaleDateString('ar-EG'),
-      'العميل': s.customer?.name || 'عميل نقدي',
-      'المبلغ': Number(s.totalAmount),
-      'طريقة الدفع': s.paymentMethod === 'cash' ? 'نقدي' : s.paymentMethod === 'card' ? 'بطاقة' : s.paymentMethod === 'transfer' ? 'تحويل' : 'آجل',
-      'الحالة': s.status === 'completed' ? 'مكتملة' : s.status === 'pending' ? 'معلقة' : 'ملغاة',
-    }))
-    const ws = XLSX.utils.json_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'المبيعات')
-    XLSX.writeFile(wb, `sales-${new Date().toISOString().slice(0, 10)}.xlsx`)
-    toast.success('تم تصدير البيانات بنجاح')
+  const paymentLabel: Record<string, string> = {
+    cash: 'نقدي', card: 'بطاقة', transfer: 'تحويل', credit: 'آجل',
   }
+  const statusLabel: Record<string, string> = {
+    completed: 'مكتملة', pending: 'معلقة', cancelled: 'ملغاة',
+  }
+
+  const exportRows = sales.map((s: any) => ({
+    invoiceNumber: s.invoiceNumber,
+    saleDate: s.saleDate,
+    customer: s.customer?.name || 'عميل نقدي',
+    totalAmount: Number(s.totalAmount || 0),
+    paymentMethod: paymentLabel[s.paymentMethod] || s.paymentMethod || '',
+    status: statusLabel[s.status] || s.status || '',
+  }))
 
   const todayCount = Number(stats?.totalOrders || 0)
   const todayAmount = Number(stats?.totalSales || 0)
@@ -143,13 +140,20 @@ export default function Sales() {
             <option value="cancelled">ملغاة</option>
           </select>
 
-          <button
-            onClick={handleExport}
-            className="h-12 px-6 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
-          >
-            <Download className="w-5 h-5" />
-            <span>تصدير</span>
-          </button>
+          <ExportMenu
+            filename={`مبيعات-${new Date().toISOString().slice(0, 10)}`}
+            title="المبيعات"
+            columns={[
+              { key: 'invoiceNumber', label: 'رقم الفاتورة' },
+              { key: 'saleDate', label: 'التاريخ' },
+              { key: 'customer', label: 'العميل' },
+              { key: 'totalAmount', label: 'المبلغ' },
+              { key: 'paymentMethod', label: 'طريقة الدفع' },
+              { key: 'status', label: 'الحالة' },
+            ]}
+            rows={exportRows}
+            dateKey="saleDate"
+          />
         </div>
       </div>
 
@@ -181,7 +185,12 @@ export default function Sales() {
                 sales.map((sale: any) => (
                   <tr key={sale.id} className="border-b border-border hover:bg-muted/50 transition-colors">
                     <td className="p-4">
-                      <span className="font-mono text-sm text-foreground">{sale.invoiceNumber}</span>
+                      <div className="flex flex-col gap-1">
+                        <span className="font-mono text-sm text-foreground">{sale.invoiceNumber}</span>
+                        {sale.invoiceType === "tax" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-fit">ضريبية B2B</span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4">
                       <span className="text-sm text-foreground">

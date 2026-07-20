@@ -6,6 +6,7 @@ import {
   TrendingUp, Calendar, X, Loader2,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import { purchaseOrderService, supplierService, branchService } from "@/services/api.service"
 import toast from "react-hot-toast"
@@ -118,6 +119,29 @@ export default function PurchaseOrders() {
             <option value="cancelled">ملغي</option>
           </select>
 
+          <ExportMenu
+            filename={`طلبات-شراء-${new Date().toISOString().slice(0, 10)}`}
+            title="طلبات الشراء"
+            columns={[
+              { key: "orderNumber", label: "رقم الطلب" },
+              { key: "supplier", label: "المورد" },
+              { key: "branch", label: "الفرع" },
+              { key: "orderDate", label: "تاريخ الطلب" },
+              { key: "expectedDeliveryDate", label: "التاريخ المتوقع" },
+              { key: "totalAmount", label: "المبلغ" },
+              { key: "status", label: "الحالة" },
+            ]}
+            rows={orders.map((o: any) => ({
+              orderNumber: o.orderNumber,
+              supplier: o.supplier?.name || "",
+              branch: o.branch?.name || "",
+              orderDate: o.orderDate,
+              expectedDeliveryDate: o.expectedDeliveryDate || "",
+              totalAmount: Number(o.totalAmount || 0),
+              status: getStatusBadge(o.status).label,
+            }))}
+            dateKey="orderDate"
+          />
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90"

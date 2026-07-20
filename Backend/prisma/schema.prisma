@@ -9,13 +9,14 @@ datasource db {
 
 model Role {
   id           Int          @id @default(autoincrement())
-  name         String       @unique 
-  displayName  String       @map("display_name") 
-  description  String?      
+  name         String       @unique
+  displayName  String       @map("display_name")
+  description  String?
   isSystem     Boolean      @default(false) @map("is_system")
+  menuAccess   String?      @map("menu_access") // JSON array of default menu section keys
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
-  
+
   permissions  RolePermission[]
   users        UserRole[]
 
@@ -81,6 +82,8 @@ model Branch {
   damagedItems           DamagedItem[]
   transfersFrom          InventoryTransfer[]    @relation("TransferFrom")
   transfersTo            InventoryTransfer[]    @relation("TransferTo")
+  cashSessions           CashSession[]
+  driverRoutes           DriverRoute[]
 
   @@index([code])
   @@index([isActive])
@@ -120,6 +123,10 @@ model User {
   damagedItems           DamagedItem[]
   damagedItemsApproved   DamagedItem[]          @relation("DamagedItemApprover")
   inventoryTransfers     InventoryTransfer[]
+  cashSessionsOpened     CashSession[]          @relation("CashSessionOpener")
+  cashSessionsClosed     CashSession[]          @relation("CashSessionCloser")
+  driverRoutesAsDriver   DriverRoute[]          @relation("DriverRouteDriver")
+  driverRoutesCreated    DriverRoute[]          @relation("DriverRouteCreator")
 
   @@index([email])
   @@index([branchId])
@@ -234,6 +241,7 @@ model Product {
   quotationItems        QuotationItem[]
   damagedItems          DamagedItem[]
   inventoryTransferItems InventoryTransferItem[]
+  driverRouteItems      DriverRouteItem[]
 
   @@index([sku])
   @@index([barcode])
@@ -370,27 +378,34 @@ model CustomerAddress {
 
 model Sale {
   id                  Int       @id @default(autoincrement())
-  invoiceNumber       String    @unique @map("invoice_number") 
+  invoiceNumber       String    @unique @map("invoice_number")
   customerId          Int?      @map("customer_id")
   branchId            Int       @map("branch_id")
   userId              Int       @map("user_id")
   saleDate            DateTime  @map("sale_date")
-  status              String    @default("completed") 
-  subtotal            Decimal   @default(0) 
-  taxAmount           Decimal   @default(0) @map("tax_amount") 
-  discountAmount      Decimal   @default(0) @map("discount_amount") 
-  totalAmount         Decimal   @default(0) @map("total_amount") 
-  paidAmount          Decimal   @default(0) @map("paid_amount") 
-  changeAmount        Decimal   @default(0) @map("change_amount") 
-  paymentMethod       String    @default("cash") @map("payment_method") 
-  paymentStatus       String    @default("paid") @map("payment_status") 
+  status              String    @default("completed")
+  invoiceType         String    @default("simplified") @map("invoice_type") // simplified | tax
+  buyerTaxNumber      String?   @map("buyer_tax_number")
+  buyerName           String?   @map("buyer_name")
+  taxRate             Decimal   @default(0) @map("tax_rate")
+  invoiceUuid         String?   @map("invoice_uuid")
+  subtotal            Decimal   @default(0)
+  taxAmount           Decimal   @default(0) @map("tax_amount")
+  discountAmount      Decimal   @default(0) @map("discount_amount")
+  totalAmount         Decimal   @default(0) @map("total_amount")
+  paidAmount          Decimal   @default(0) @map("paid_amount")
+  changeAmount        Decimal   @default(0) @map("change_amount")
+  paymentMethod       String    @default("cash") @map("payment_method")
+  cashAmount          Decimal   @default(0) @map("cash_amount")
+  cardAmount          Decimal   @default(0) @map("card_amount")
+  paymentStatus       String    @default("paid") @map("payment_status")
   loyaltyPointsEarned Int       @default(0) @map("loyalty_points_earned")
   loyaltyPointsUsed   Int       @default(0) @map("loyalty_points_used")
-  notes               String?   
+  notes               String?
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
   deletedAt           DateTime? @map("deleted_at")
-  
+
   customer            Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   branch              Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
   user                User      @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -403,6 +418,7 @@ model Sale {
   @@index([userId])
   @@index([saleDate])
   @@index([status])
+  @@index([invoiceType])
   @@map("sales")
 }
 
@@ -838,5 +854,90 @@ model InventoryTransferItem {
   @@index([transferId])
   @@index([productId])
   @@map("inventory_transfer_items")
+}
+
+// ===================== CashSession (الخزنة اليومية) =====================
+model CashSession {
+  id               Int       @id @default(autoincrement())
+  branchId         Int       @map("branch_id")
+  openedById       Int       @map("opened_by_id")
+  closedById       Int?      @map("closed_by_id")
+  status           String    @default("open") // open | closed
+  openedAt         DateTime  @map("opened_at")
+  closedAt         DateTime? @map("closed_at")
+
+  openingCash      Decimal   @default(0) @map("opening_cash")
+  openingNetwork   Decimal   @default(0) @map("opening_network")
+
+  expectedCash     Decimal   @default(0) @map("expected_cash")
+  expectedNetwork  Decimal   @default(0) @map("expected_network")
+
+  countedCash      Decimal?  @map("counted_cash")
+  countedNetwork   Decimal?  @map("counted_network")
+
+  cashDeficit      Decimal   @default(0) @map("cash_deficit")
+  networkDeficit   Decimal   @default(0) @map("network_deficit")
+
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  branch           Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  openedBy         User      @relation("CashSessionOpener", fields: [openedById], references: [id], onDelete: Restrict)
+  closedBy         User?     @relation("CashSessionCloser", fields: [closedById], references: [id], onDelete: SetNull)
+
+  @@index([branchId])
+  @@index([status])
+  @@index([openedAt])
+  @@map("cash_sessions")
+}
+
+// ===================== DriverRoute (خط سير السائق / الفيصل) =====================
+model DriverRoute {
+  id            Int       @id @default(autoincrement())
+  routeNumber   String    @unique @map("route_number")
+  driverId      Int       @map("driver_id")
+  branchId      Int       @map("branch_id")
+  createdById   Int       @map("created_by_id")
+  periodType    String    @default("daily") @map("period_type") // daily | weekly
+  routeDate     DateTime  @map("route_date")
+  weekEndDate   DateTime? @map("week_end_date")
+  status        String    @default("draft") // draft | dispatched | reconciled | closed
+  notes         String?
+  dispatchedAt  DateTime? @map("dispatched_at")
+  reconciledAt  DateTime? @map("reconciled_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  driver        User      @relation("DriverRouteDriver", fields: [driverId], references: [id], onDelete: Restrict)
+  branch        Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy     User      @relation("DriverRouteCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  items         DriverRouteItem[]
+
+  @@index([driverId])
+  @@index([branchId])
+  @@index([routeDate])
+  @@index([status])
+  @@map("driver_routes")
+}
+
+model DriverRouteItem {
+  id             Int         @id @default(autoincrement())
+  routeId        Int         @map("route_id")
+  productId      Int         @map("product_id")
+  warehouseQty   Int         @map("warehouse_qty") // خرج من المخزن
+  driverQty      Int?        @map("driver_qty")    // استلمه السائق
+  variance       Int         @default(0)          // warehouse - driver (+ عجز على السائق)
+  isMatched      Boolean     @default(false) @map("is_matched")
+  notes          String?
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  route          DriverRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  product        Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([routeId])
+  @@index([productId])
+  @@map("driver_route_items")
 }
 

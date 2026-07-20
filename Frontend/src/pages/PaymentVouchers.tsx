@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, Search, ArrowDownCircle, ArrowUpCircle, X, Loader2, Banknote, CreditCard, Building } from "lucide-react"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -89,9 +90,34 @@ export default function PaymentVouchers() {
           <h1 className="text-2xl font-bold">سندات القبض والدفع</h1>
           <p className="text-sm text-muted-foreground mt-1">تتبع المدفوعات الواردة والصادرة</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
-          <Plus className="w-4 h-4" /> سند جديد
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            filename={`سندات-${new Date().toISOString().slice(0, 10)}`}
+            title="سندات القبض والدفع"
+            columns={[
+              { key: "voucherNumber", label: "رقم السند" },
+              { key: "voucherType", label: "النوع" },
+              { key: "party", label: "العميل/المورد" },
+              { key: "paymentMethod", label: "طريقة الدفع" },
+              { key: "bankAccount", label: "البنك" },
+              { key: "voucherDate", label: "التاريخ" },
+              { key: "amount", label: "المبلغ" },
+            ]}
+            rows={vouchers.map((v) => ({
+              voucherNumber: v.voucherNumber,
+              voucherType: v.voucherType === "receipt" ? "قبض" : "دفع",
+              party: v.customer?.name || v.supplier?.name || "",
+              paymentMethod: paymentMethodLabel[v.paymentMethod] || v.paymentMethod || "",
+              bankAccount: v.bankAccount?.name || "نقدي",
+              voucherDate: v.voucherDate,
+              amount: Number(v.amount || 0),
+            }))}
+            dateKey="voucherDate"
+          />
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
+            <Plus className="w-4 h-4" /> سند جديد
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

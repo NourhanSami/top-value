@@ -16,6 +16,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
+import { ExportMenu } from "@/components/ui/ExportMenu"
 import { cn, formatCurrency } from "@/lib/utils"
 import { productService, categoryService, branchService } from "@/services/api.service"
 import type { Product } from "@/types"
@@ -248,6 +249,28 @@ export default function Products() {
           variant="primary"
         />
         <StatCard
+          title="إجمالي الكمية بالمخزون"
+          value={Number(stats?.totalStockQuantity ?? stats?.total_stock_quantity ?? 0)}
+          icon={Package}
+          variant="info"
+          subtitle="مجموع وحدات الأصناف"
+        />
+        <StatCard
+          title="إجمالي المبيعات"
+          value={formatCurrency(Number(stats?.totalSalesAmount ?? stats?.total_sales_amount ?? 0))}
+          icon={Package}
+          variant="success"
+          subtitle={`${Number(stats?.totalSalesQuantity ?? stats?.total_sales_quantity ?? 0)} وحدة مباعة`}
+        />
+        <StatCard
+          title="قيمة المخزون"
+          value={formatCurrency(Number(stats?.totalValue ?? stats?.total_value ?? 0))}
+          icon={Package}
+          variant="warning"
+        />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
           title="منتجات متوفرة"
           value={availableProducts}
           icon={Grid3x3}
@@ -353,6 +376,33 @@ export default function Products() {
           </div>
 
           {/* Print */}
+          <ExportMenu
+            filename={`منتجات-${new Date().toISOString().slice(0, 10)}`}
+            title="المنتجات"
+            columns={[
+              { key: "name", label: "المنتج" },
+              { key: "sku", label: "SKU" },
+              { key: "barcode", label: "الباركود" },
+              { key: "category", label: "التصنيف" },
+              { key: "price", label: "سعر البيع" },
+              { key: "costPrice", label: "سعر التكلفة" },
+              { key: "stock", label: "المخزون" },
+              { key: "unit", label: "الوحدة" },
+              { key: "createdAt", label: "تاريخ الإضافة" },
+            ]}
+            rows={filteredProducts.map((p) => ({
+              name: p.name,
+              sku: p.sku || "",
+              barcode: p.barcode || "",
+              category: typeof p.category === "object" ? (p.category?.name || "غير مصنف") : (p.category || "غير مصنف"),
+              price: Number(p.price || 0),
+              costPrice: Number(p.cost_price || p.costPrice || 0),
+              stock: Number(p.stock || 0),
+              unit: p.unit || "",
+              createdAt: p.createdAt || p.created_at || "",
+            }))}
+            dateKey="createdAt"
+          />
           <button
             onClick={handlePrintList}
             className="flex items-center gap-2 px-4 h-10 bg-card border border-border rounded-xl hover:bg-muted transition-colors"
