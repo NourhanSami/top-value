@@ -16,7 +16,18 @@ const bankAccountSchema = z.object({
 
 export const getAllBankAccounts = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const accounts = await prisma.bankAccount.findMany({ where: { isActive: true }, orderBy: { createdAt: 'asc' } });
+    const { search } = req.query;
+    const where: any = { isActive: true };
+    if (search) {
+      const q = search as string;
+      where.OR = [
+        { name: { contains: q } },
+        { bankName: { contains: q } },
+        { accountNumber: { contains: q } },
+        { iban: { contains: q } },
+      ];
+    }
+    const accounts = await prisma.bankAccount.findMany({ where, orderBy: { createdAt: 'asc' } });
     const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
     res.json({ success: true, data: accounts, total_balance: totalBalance });
   } catch (error) { next(error); }

@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency } from "@/lib/utils"
-import { productService } from "@/services/api.service"
+import { productService, categoryService, branchService } from "@/services/api.service"
 import type { Product } from "@/types"
 import toast from "react-hot-toast"
 
@@ -32,9 +32,10 @@ export default function Products() {
   const [showFilterPopover, setShowFilterPopover] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<any>(null)
   const [addForm, setAddForm] = useState({
     name: "", sku: "", barcode: "", sellingPrice: "", costPrice: "",
-    stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: ""
+    stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: "", categoryId: ""
   })
 
   // Fetch products
@@ -48,6 +49,16 @@ export default function Products() {
     }),
   })
 
+  const { data: categoriesRes } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => categoryService.getAll(),
+  })
+
+  const { data: branchesRes } = useQuery({
+    queryKey: ["branches-list"],
+    queryFn: () => branchService.getAll(),
+  })
+
   // Fetch statistics
   const { data: statsResponse } = useQuery({
     queryKey: ["products", "statistics"],
@@ -56,6 +67,8 @@ export default function Products() {
 
   const products: any[] = productsResponse?.data || []
   const stats = statsResponse?.data
+  const categories: any[] = categoriesRes?.data || []
+  const mainBranchName = (branchesRes?.data || []).find((b: any) => b.isMain)?.name || "المخزن الرئيسي"
 
   // Normalize product data
   const normalizedProducts = products.map(p => ({
@@ -74,19 +87,70 @@ export default function Products() {
     },
   })
 
-  // Add product mutation
   const addMutation = useMutation({
-    mutationFn: (data: any) => productService.create(data),
+    mutationFn: (data: any) => editingProduct
+      ? productService.update(editingProduct.id, data)
+      : productService.create(data),
     onSuccess: () => {
-      toast.success("تم إضافة المنتج بنجاح")
+      toast.success(editingProduct ? "تم تحديث المنتج" : "تم إضافة المنتج بنجاح")
       queryClient.invalidateQueries({ queryKey: ["products"] })
       setShowAddDialog(false)
-      setAddForm({ name: "", sku: "", barcode: "", sellingPrice: "", costPrice: "", stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: "" })
+      setEditingProduct(null)
+      setAddForm({ name: "", sku: "", barcode: "", sellingPrice: "", costPrice: "", stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: "", categoryId: "" })
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || "حدث خطأ أثناء إضافة المنتج")
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء حفظ المنتج")
     }
   })
+
+  const openEdit = (product: any) => {
+    setEditingProduct(product)
+    setAddForm({
+      name: product.name || "",
+      sku: product.sku || "",
+      barcode: product.barcode || "",
+      sellingPrice: String(product.sellingPrice || product.price || ""),
+      costPrice: String(product.costPrice || product.cost_price || ""),
+      stockQuantity: String(product.stockQuantity || product.stock || 0),
+      minStockLevel: String(product.minStockLevel || product.reorder_level || 5),
+      unit: product.unit || "قطعة",
+      description: product.description || "",
+      categoryId: product.categoryId ? String(product.categoryId) : (product.category?.id ? String(product.category.id) : ""),
+    })
+    setShowAddDialog(true)
+  }
+
+  const handlePrintList = () => {
+    const rows = filteredProducts.map(p =>
+      `<tr>
+        <td>${p.name}</td>
+        <td>${p.barcode || p.sku || ""}</td>
+        <td>${typeof p.category === "object" ? (p.category?.name || "غير مصنف") : (p.category || "غير مصنف")}</td>
+        <td>${Number(p.price).toFixed(2)}</td>
+        <td>${p.stock}</td>
+        <td>${mainBranchName}</td>
+      </tr>`
+    ).join("")
+    const w = window.open("", "_blank")
+    if (!w) return toast.error("اسمح بالنوافذ المنبثقة للطباعة")
+    w.document.write(`<!DOCTYPE html><html dir="rtl"><head><title>قائمة المنتجات</title>
+      <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px;text-align:right}th{background:#f3f4f6}</style>
+      </head><body><h2>قائمة المنتجات</h2><table><thead><tr><th>المنتج</th><th>الباركود</th><th>التصنيف</th><th>السعر</th><th>المخزون</th><th>المخزن</th></tr></thead><tbody>${rows}</tbody></table></body></html>`)
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
+  const printBarcode = (product: any) => {
+    const code = product.barcode || product.sku
+    if (!code) return toast.error("لا يوجد باركود لهذا المنتج")
+    const w = window.open("", "_blank", "width=400,height=300")
+    if (!w) return toast.error("اسمح بالنوافذ المنبثقة للطباعة")
+    w.document.write(`<!DOCTYPE html><html dir="rtl"><head><title>باركود - ${product.name}</title>
+      <style>body{font-family:monospace;text-align:center;padding:40px}h3{margin-bottom:8px}.code{font-size:28px;letter-spacing:4px;border:2px solid #000;display:inline-block;padding:12px 20px;margin-top:12px}</style>
+      </head><body><h3>${product.name}</h3><div class="code">${code}</div><script>window.onload=()=>window.print()</script></body></html>`)
+    w.document.close()
+  }
 
   // Calculate stats
   const totalProducts = stats?.total || normalizedProducts.length
@@ -263,24 +327,24 @@ export default function Products() {
                   <FilterCheckbox
                     label="الكل"
                     checked={stockFilter === "all"}
-                    onChange={() => setStockFilter("all")}
+                    onChange={() => { setStockFilter("all"); setShowFilterPopover(false) }}
                   />
                   <FilterCheckbox
                     label="منخفض"
                     checked={stockFilter === "low"}
-                    onChange={() => setStockFilter("low")}
+                    onChange={() => { setStockFilter("low"); setShowFilterPopover(false) }}
                     color="destructive"
                   />
                   <FilterCheckbox
                     label="متوسط"
                     checked={stockFilter === "medium"}
-                    onChange={() => setStockFilter("medium")}
+                    onChange={() => { setStockFilter("medium"); setShowFilterPopover(false) }}
                     color="warning"
                   />
                   <FilterCheckbox
                     label="متوفر"
                     checked={stockFilter === "available"}
-                    onChange={() => setStockFilter("available")}
+                    onChange={() => { setStockFilter("available"); setShowFilterPopover(false) }}
                     color="success"
                   />
                 </div>
@@ -289,14 +353,21 @@ export default function Products() {
           </div>
 
           {/* Print */}
-          <button className="flex items-center gap-2 px-4 h-10 bg-card border border-border rounded-xl hover:bg-muted transition-colors">
+          <button
+            onClick={handlePrintList}
+            className="flex items-center gap-2 px-4 h-10 bg-card border border-border rounded-xl hover:bg-muted transition-colors"
+          >
             <Printer className="w-4 h-4" />
             <span className="text-sm font-medium">طباعة</span>
           </button>
 
           {/* Add Product */}
           <button
-            onClick={() => setShowAddDialog(true)}
+            onClick={() => {
+              setEditingProduct(null)
+              setAddForm({ name: "", sku: "", barcode: "", sellingPrice: "", costPrice: "", stockQuantity: "0", minStockLevel: "5", unit: "قطعة", description: "", categoryId: "" })
+              setShowAddDialog(true)
+            }}
             className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors">
             <Plus className="w-4 h-4" />
             <span className="text-sm font-medium">إضافة منتج</span>
@@ -376,8 +447,8 @@ export default function Products() {
                       <td className="py-4 px-4">
                         <span className="text-sm text-foreground">
                           {typeof product.category === 'object' 
-                            ? product.category?.name 
-                            : product.category || '-'}
+                            ? (product.category?.name || "غير مصنف")
+                            : (product.category || "غير مصنف")}
                         </span>
                       </td>
                       <td className="py-4 px-4">
@@ -411,13 +482,15 @@ export default function Products() {
                       </td>
                       <td className="py-4 px-4">
                         <span className="text-sm text-muted-foreground">
-                          {typeof product.warehouse === 'object'
-                            ? product.warehouse?.name
-                            : product.warehouse || '-'}
+                          {mainBranchName}
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        <ProductActionsMenu productId={product.id} />
+                        <ProductActionsMenu
+                          productId={product.id}
+                          onEdit={() => openEdit(product)}
+                          onPrintBarcode={() => printBarcode(product)}
+                        />
                       </td>
                     </tr>
                   )
@@ -454,7 +527,11 @@ export default function Products() {
                       </span>
                     )}
                   </div>
-                  <ProductActionsMenu productId={product.id} />
+                  <ProductActionsMenu
+                    productId={product.id}
+                    onEdit={() => openEdit(product)}
+                    onPrintBarcode={() => printBarcode(product)}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -488,9 +565,7 @@ export default function Products() {
 
                   <div className="pt-2 border-t border-border">
                     <span className="text-xs text-muted-foreground">
-                      {typeof product.warehouse === 'object'
-                        ? product.warehouse?.name
-                        : product.warehouse || '-'}
+                      {mainBranchName}
                     </span>
                   </div>
                 </div>
@@ -505,7 +580,7 @@ export default function Products() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-border">
-              <h2 className="text-lg font-bold text-foreground">إضافة منتج جديد</h2>
+              <h2 className="text-lg font-bold text-foreground">{editingProduct ? "تعديل منتج" : "إضافة منتج جديد"}</h2>
               <button onClick={() => setShowAddDialog(false)} className="p-2 hover:bg-muted rounded-xl">
                 <X className="w-4 h-4" />
               </button>
@@ -548,6 +623,14 @@ export default function Products() {
                     placeholder="5" className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background" />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium mb-1.5">التصنيف</label>
+                  <select value={addForm.categoryId} onChange={e => setAddForm(f => ({ ...f, categoryId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none bg-background">
+                    <option value="">بدون تصنيف</option>
+                    {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium mb-1.5">وحدة القياس</label>
                   <select value={addForm.unit} onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))}
                     className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:outline-none bg-background">
@@ -562,19 +645,22 @@ export default function Products() {
                 </div>
               </div>
               <div className="flex justify-end gap-3 pt-2">
-                <button onClick={() => setShowAddDialog(false)} className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted">إلغاء</button>
+                <button onClick={() => { setShowAddDialog(false); setEditingProduct(null) }} className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted">إلغاء</button>
                 <button
                   disabled={!addForm.name || !addForm.sellingPrice || addMutation.isPending}
                   onClick={() => addMutation.mutate({
-                    name: addForm.name, sku: addForm.sku || undefined, barcode: addForm.barcode || undefined,
+                    name: addForm.name,
+                    sku: addForm.sku || `SKU-${Date.now()}`,
+                    barcode: addForm.barcode || undefined,
                     sellingPrice: parseFloat(addForm.sellingPrice), costPrice: parseFloat(addForm.costPrice) || 0,
                     stockQuantity: parseInt(addForm.stockQuantity) || 0, minStockLevel: parseInt(addForm.minStockLevel) || 5,
-                    unit: addForm.unit, description: addForm.description || undefined
+                    unit: addForm.unit, description: addForm.description || undefined,
+                    categoryId: addForm.categoryId ? parseInt(addForm.categoryId) : undefined,
                   })}
                   className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90 disabled:opacity-60"
                 >
                   {addMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  حفظ المنتج
+                  {editingProduct ? "حفظ التعديلات" : "حفظ المنتج"}
                 </button>
               </div>
             </div>
@@ -628,26 +714,31 @@ function FilterCheckbox({
   )
 }
 
-function ProductActionsMenu({ productId }: { productId: number }) {
+function ProductActionsMenu({
+  productId,
+  onEdit,
+  onPrintBarcode,
+}: {
+  productId: number
+  onEdit: () => void
+  onPrintBarcode: () => void
+}) {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => productService.delete(id),
     onSuccess: () => {
+      toast.success("تم حذف المنتج")
       queryClient.invalidateQueries({ queryKey: ["products"] })
       setIsOpen(false)
     },
+    onError: () => toast.error("فشل حذف المنتج"),
   })
 
   const handleDelete = async () => {
     if (window.confirm("هل أنت متأكد من حذف هذا المنتج؟")) {
-      try {
-        await deleteMutation.mutateAsync(productId)
-      } catch (error) {
-        console.error("فشل حذف المنتج:", error)
-        alert("فشل حذف المنتج. يرجى المحاولة مرة أخرى.")
-      }
+      await deleteMutation.mutateAsync(productId)
     }
   }
 
@@ -667,11 +758,17 @@ function ProductActionsMenu({ productId }: { productId: number }) {
             onClick={() => setIsOpen(false)}
           />
           <div className="absolute left-0 top-full mt-1 w-48 flat-card p-2 z-20 shadow-flat-lg">
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted rounded-lg transition-colors">
+            <button
+              onClick={() => { onEdit(); setIsOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted rounded-lg transition-colors"
+            >
               <Edit className="w-4 h-4" />
               تعديل
             </button>
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted rounded-lg transition-colors">
+            <button
+              onClick={() => { onPrintBarcode(); setIsOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted rounded-lg transition-colors"
+            >
               <Barcode className="w-4 h-4" />
               طباعة باركود
             </button>

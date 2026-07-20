@@ -25,6 +25,7 @@ import InstallmentsPage from "./pages/InstallmentsPage"
 import BankAccountsPage from "./pages/BankAccountsPage"
 import InventoryTransfersPage from "./pages/InventoryTransfersPage"
 import ProfitLossReport from "./pages/ProfitLossReport"
+import CapitalSetup from "./pages/CapitalSetup"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,13 +110,13 @@ function AppRoutes() {
         <Route path="/branches" element={<Branches />} />
         <Route path="/warehouses" element={<Branches />} />
         <Route path="/users" element={<Users />} />
-        <Route path="/employees" element={<Users />} />
+        <Route path="/employees" element={<Navigate to="/users" replace />} />
         <Route path="/returns" element={<Returns />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/damaged-items" element={<DamagedItems />} />
         <Route path="/activity-logs" element={<ActivityLogs />} />
         <Route path="/reports" element={<Reports />} />
-        <Route path="/capital-setup" element={<div className="p-6"><h1 className="text-2xl font-bold">رأس المال</h1><p className="text-muted-foreground mt-2">قريباً...</p></div>} />
+        <Route path="/capital-setup" element={<CapitalSetup />} />
         <Route path="/quotations" element={<Quotations />} />
         <Route path="/vouchers" element={<PaymentVouchers />} />
         <Route path="/installments" element={<InstallmentsPage />} />

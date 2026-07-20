@@ -1,5 +1,6 @@
 import { Printer, X, Download } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { getCompanyInfo } from "@/lib/settings"
 import QRCode from "qrcode"
 import { useEffect, useState, useRef } from "react"
 import jsPDF from "jspdf"
@@ -23,14 +24,15 @@ function buildZatcaQRData(invoice: any, companyName: string, taxNumber: string):
 export default function InvoicePreviewDialog({ isOpen, onClose, invoice }: InvoicePreviewDialogProps) {
   const [qrDataUrl, setQrDataUrl] = useState("")
   const contentRef = useRef<HTMLDivElement>(null)
-  const companyName = localStorage.getItem("company_name") || "نظام إدارة المخازن"
-  const taxNumber = localStorage.getItem("company_tax_number") || ""
+  const company = getCompanyInfo()
+  const companyName = company.name
+  const taxNumber = company.taxNumber
 
   useEffect(() => {
     if (!isOpen || !invoice) return
     const qrData = buildZatcaQRData(invoice, companyName, taxNumber)
     QRCode.toDataURL(qrData, { width: 120, margin: 1 }).then(setQrDataUrl).catch(console.error)
-  }, [isOpen, invoice])
+  }, [isOpen, invoice, companyName, taxNumber])
 
   if (!isOpen) return null
 
@@ -75,6 +77,8 @@ export default function InvoicePreviewDialog({ isOpen, onClose, invoice }: Invoi
                 <div>
                   <h1 className="text-3xl font-bold mb-1">{companyName}</h1>
                   <p className="text-gray-600">فاتورة مبيعات</p>
+                  {company.address && <p className="text-sm text-gray-500 mt-1">{company.address}</p>}
+                  {company.phone && <p className="text-sm text-gray-500">هاتف: {company.phone}</p>}
                   {taxNumber && <p className="text-sm text-gray-500 mt-1">الرقم الضريبي: {taxNumber}</p>}
                 </div>
                 {qrDataUrl && (

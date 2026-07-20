@@ -131,7 +131,13 @@ export default function PaymentVouchers() {
                       </td>
                       <td className="px-4 py-3">{v.customer?.name || v.supplier?.name || "—"}</td>
                       <td className="px-4 py-3">{paymentMethodLabel[v.paymentMethod] || v.paymentMethod}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{v.bankAccount ? `${v.bankAccount.bankName} - ${v.bankAccount.name}` : "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {v.bankAccount
+                          ? `${v.bankAccount.bankName} - ${v.bankAccount.name}`
+                          : v.paymentMethod === "cash"
+                            ? "نقدي"
+                            : "—"}
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(v.voucherDate)}</td>
                       <td className={cn("px-4 py-3 font-bold", v.voucherType === "receipt" ? "text-green-600" : "text-red-600")}>{formatCurrency(Number(v.amount))}</td>
                     </tr>
@@ -160,7 +166,16 @@ function CreateVoucherDialog({ customers, suppliers, banks, onClose, onSubmit, s
 
   const handleSubmit = () => {
     if (!form.amount || Number(form.amount) <= 0) return toast.error("أدخل المبلغ")
-    onSubmit({ ...form, customerId: form.customerId ? parseInt(form.customerId) : undefined, supplierId: form.supplierId ? parseInt(form.supplierId) : undefined, bankAccountId: form.bankAccountId ? parseInt(form.bankAccountId) : undefined, amount: parseFloat(form.amount) })
+    if (["bank", "card", "transfer"].includes(form.paymentMethod) && !form.bankAccountId) {
+      return toast.error("اختر الحساب البنكي لطريقة الدفع هذه")
+    }
+    onSubmit({
+      ...form,
+      customerId: form.customerId ? parseInt(form.customerId) : undefined,
+      supplierId: form.supplierId ? parseInt(form.supplierId) : undefined,
+      bankAccountId: form.bankAccountId ? parseInt(form.bankAccountId) : undefined,
+      amount: parseFloat(form.amount),
+    })
   }
 
   return (
@@ -215,20 +230,24 @@ function CreateVoucherDialog({ customers, suppliers, banks, onClose, onSubmit, s
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1.5">طريقة الدفع</label>
-              <select value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value })} className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none">
+              <select value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value, bankAccountId: e.target.value === "cash" ? "" : form.bankAccountId })} className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none">
                 <option value="cash">نقدي</option>
                 <option value="bank">بنكي</option>
                 <option value="card">بطاقة</option>
                 <option value="transfer">حوالة</option>
               </select>
             </div>
-            {banks.length > 0 && (
+            {form.paymentMethod !== "cash" && (
               <div>
-                <label className="block text-sm font-medium mb-1.5">الحساب البنكي</label>
-                <select value={form.bankAccountId} onChange={e => setForm({ ...form, bankAccountId: e.target.value })} className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none">
-                  <option value="">اختر الحساب</option>
-                  {banks.map((b: any) => <option key={b.id} value={b.id}>{b.bankName} - {b.name}</option>)}
-                </select>
+                <label className="block text-sm font-medium mb-1.5">الحساب البنكي *</label>
+                {banks.length === 0 ? (
+                  <p className="text-xs text-destructive mt-2">لا توجد حسابات بنكية — أضف حساباً من صفحة الحسابات البنكية أولاً</p>
+                ) : (
+                  <select value={form.bankAccountId} onChange={e => setForm({ ...form, bankAccountId: e.target.value })} className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none">
+                    <option value="">اختر الحساب</option>
+                    {banks.map((b: any) => <option key={b.id} value={b.id}>{b.bankName} - {b.name}</option>)}
+                  </select>
+                )}
               </div>
             )}
           </div>

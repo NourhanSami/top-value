@@ -2,207 +2,231 @@ import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Save, Loader2 } from "lucide-react"
 import BaseDialog from "./BaseDialog"
-import { expenseService } from "@/services/api.service"
+import { expenseService, branchService } from "@/services/api.service"
+import toast from "react-hot-toast"
 
 interface ExpenseDialogProps {
-  isOpen: boolean
+  open?: boolean
+  isOpen?: boolean
   onClose: () => void
+  expense?: any
   expenseId?: number
-  mode: "create" | "edit"
-}
-
-const EXPENSE_CATEGORIES = [
-  { value: "general", label: "عامة" },
-  { value: "vehicles", label: "سيارات" },
-  { value: "rent", label: "إيجار" },
-  { value: "services", label: "خدمات" },
-  { value: "salaries", label: "رواتب" },
-  { value: "other", label: "أخرى" },
-]
-
-interface ExpenseFormData {
-  title: string
-  amount: number
-  category: string
-  expenseDate: string
-  notes?: string
+  mode?: "create" | "edit"
 }
 
 export default function ExpenseDialog({
+  open,
   isOpen,
   onClose,
+  expense,
   expenseId,
-  mode,
+  mode: modeProp,
 }: ExpenseDialogProps) {
+  const dialogOpen = open ?? isOpen ?? false
+  const mode = modeProp || (expense || expenseId ? "edit" : "create")
+  const editId = expense?.id || expenseId
+
   const queryClient = useQueryClient()
-  const [formData, setFormData] = useState<ExpenseFormData>({
+  const [formData, setFormData] = useState({
     title: "",
-    amount: 0,
-    category: "general",
-    expenseDate: new Date().toISOString().split('T')[0],
+    description: "",
+    amount: "",
+    expenseCategoryId: "",
+    branchId: "",
+    expenseDate: new Date().toISOString().split("T")[0],
+    paymentMethod: "cash",
+    notes: "",
   })
 
-  // Fetch expense data if editing
-  const { data: expenseResponse } = useQuery({
-    queryKey: ["expenses", expenseId],
-    queryFn: () => expenseService.getById(expenseId!),
-    enabled: mode === "edit" && !!expenseId,
+  const { data: categoriesRes } = useQuery({
+    queryKey: ["expense-categories"],
+    queryFn: () => expenseService.getCategories(),
+    enabled: dialogOpen,
   })
+  const { data: branchesRes } = useQuery({
+    queryKey: ["branches-list"],
+    queryFn: () => branchService.getAll(),
+    enabled: dialogOpen,
+  })
+
+  const categories: any[] = categoriesRes?.data || []
+  const branches: any[] = branchesRes?.data || []
 
   useEffect(() => {
-    if (mode === "edit" && expenseResponse?.data) {
-      const expense = expenseResponse.data
+    if (!dialogOpen) return
+    if (mode === "edit" && expense) {
       setFormData({
         title: expense.title || "",
-        amount: expense.amount || 0,
-        category: expense.category || "general",
-        expenseDate: expense.expenseDate?.split('T')[0] || new Date().toISOString().split('T')[0],
+        description: expense.description || "",
+        amount: String(expense.amount ?? ""),
+        expenseCategoryId: String(expense.expenseCategoryId || expense.category?.id || ""),
+        branchId: String(expense.branchId || expense.branch?.id || ""),
+        expenseDate: expense.expenseDate?.split("T")[0] || new Date().toISOString().split("T")[0],
+        paymentMethod: expense.paymentMethod === "bank_transfer" ? "transfer" : (expense.paymentMethod || "cash"),
         notes: expense.notes || "",
       })
+    } else if (mode === "create") {
+      setFormData({
+        title: "",
+        description: "",
+        amount: "",
+        expenseCategoryId: categories[0] ? String(categories[0].id) : "",
+        branchId: branches[0] ? String(branches[0].id) : "",
+        expenseDate: new Date().toISOString().split("T")[0],
+        paymentMethod: "cash",
+        notes: "",
+      })
     }
-  }, [expenseResponse, mode])
+  }, [dialogOpen, mode, expense, categories.length, branches.length])
 
-  // Create/Update mutation
   const saveMutation = useMutation({
-    mutationFn: (data: ExpenseFormData) => {
-      if (mode === "create") {
-        return expenseService.create(data)
-      } else {
-        return expenseService.update(expenseId!, data)
-      }
-    },
+    mutationFn: (data: any) =>
+      mode === "create" ? expenseService.create(data) : expenseService.update(editId!, data),
     onSuccess: () => {
+      toast.success(mode === "create" ? "تم إضافة المصروف" : "تم تحديث المصروف")
       queryClient.invalidateQueries({ queryKey: ["expenses"] })
       onClose()
     },
+    onError: (e: any) => toast.error(e.response?.data?.message || "فشل الحفظ"),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    saveMutation.mutate(formData)
-  }
+    if (!formData.title.trim()) return toast.error("أدخل عنوان المصروف")
+    if (!formData.expenseCategoryId) return toast.error("اختر الفئة")
+    if (!formData.branchId) return toast.error("اختر الفرع")
+    const amount = parseFloat(formData.amount)
+    if (!amount || amount <= 0) return toast.error("أدخل مبلغاً صحيحاً")
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type } = e.target
-    
-    if (type === "number") {
-      setFormData((prev) => ({ ...prev, [name]: parseFloat(value) || 0 }))
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }))
-    }
+    saveMutation.mutate({
+      title: formData.title.trim(),
+      description: formData.description.trim() || undefined,
+      amount,
+      expenseCategoryId: parseInt(formData.expenseCategoryId),
+      branchId: parseInt(formData.branchId),
+      expenseDate: new Date(formData.expenseDate + "T12:00:00").toISOString(),
+      paymentMethod: formData.paymentMethod,
+      notes: formData.notes || undefined,
+    })
   }
 
   return (
     <BaseDialog
-      isOpen={isOpen}
+      isOpen={dialogOpen}
       onClose={onClose}
       title={mode === "create" ? "إضافة مصروف جديد" : "تعديل المصروف"}
       maxWidth="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-2">
-            عنوان المصروف <span className="text-destructive">*</span>
-          </label>
+          <label className="block text-sm font-medium mb-1.5">عنوان المصروف *</label>
           <input
-            type="text"
-            name="title"
             value={formData.title}
-            onChange={handleChange}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
             required
-            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">الوصف</label>
+          <input
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-2">
-              المبلغ <span className="text-destructive">*</span>
-            </label>
+            <label className="block text-sm font-medium mb-1.5">المبلغ *</label>
             <input
               type="number"
-              name="amount"
-              value={formData.amount}
-              onChange={handleChange}
-              required
               min="0"
               step="0.01"
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              value={formData.amount}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
+              required
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium mb-2">
-              التصنيف <span className="text-destructive">*</span>
-            </label>
+            <label className="block text-sm font-medium mb-1.5">الفئة *</label>
             <select
-              name="category"
-              value={formData.category}
-              onChange={handleChange}
+              value={formData.expenseCategoryId}
+              onChange={(e) => setFormData({ ...formData, expenseCategoryId: e.target.value })}
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
               required
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              {EXPENSE_CATEGORIES.map((cat) => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.label}
-                </option>
+              <option value="">اختر الفئة</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium mb-2">
-              التاريخ <span className="text-destructive">*</span>
-            </label>
+            <label className="block text-sm font-medium mb-1.5">الفرع *</label>
+            <select
+              value={formData.branchId}
+              onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
+              required
+            >
+              <option value="">اختر الفرع</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">التاريخ *</label>
             <input
               type="date"
-              name="expenseDate"
               value={formData.expenseDate}
-              onChange={handleChange}
+              onChange={(e) => setFormData({ ...formData, expenseDate: e.target.value })}
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
               required
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">طريقة الدفع</label>
+            <select
+              value={formData.paymentMethod}
+              onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+              className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
+            >
+              <option value="cash">نقدي</option>
+              <option value="card">بطاقة</option>
+              <option value="transfer">تحويل</option>
+              <option value="check">شيك</option>
+            </select>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2">ملاحظات</label>
+          <label className="block text-sm font-medium mb-1.5">ملاحظات</label>
           <textarea
-            name="notes"
-            value={formData.notes || ""}
-            onChange={handleChange}
-            rows={3}
-            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            value={formData.notes}
+            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            rows={2}
+            className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none"
           />
         </div>
 
-        {/* Actions */}
         <div className="flex justify-end gap-3 pt-4 border-t border-border">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
-          >
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted">
             إلغاء
           </button>
           <button
             type="submit"
             disabled={saveMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90 disabled:opacity-50"
           >
-            {saveMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>جاري الحفظ...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>حفظ</span>
-              </>
-            )}
+            {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            حفظ
           </button>
         </div>
       </form>

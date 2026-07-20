@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, AlertTriangle, Clock, CheckCircle, Calendar, X, Loader2 } from "lucide-react"
+import { Plus, AlertTriangle, Clock, CheckCircle, Calendar, X, Loader2, Search } from "lucide-react"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -40,16 +40,18 @@ export default function InstallmentsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [statusFilter, setStatusFilter] = useState("")
   const [typeFilter, setTypeFilter] = useState<"all" | "customer" | "supplier">("all")
+  const [searchTerm, setSearchTerm] = useState("")
   const [page, setPage] = useState(1)
   const [payingId, setPayingId] = useState<number | null>(null)
   const [payAmount, setPayAmount] = useState("")
 
   const { data: res, isLoading } = useQuery({
-    queryKey: ["schedules", statusFilter, typeFilter, page],
+    queryKey: ["schedules", statusFilter, typeFilter, page, searchTerm],
     queryFn: () => schedulesApi.getAll({
       status: statusFilter || undefined,
       page,
       limit: 20,
+      search: searchTerm || undefined,
       overdue: statusFilter === "overdue" ? "true" : undefined,
     }),
   })
@@ -102,6 +104,17 @@ export default function InstallmentsPage() {
         {Object.entries({ "": "الكل", pending: "قيد الانتظار", partial: "جزئي", paid: "مدفوع", overdue: "متأخر" }).map(([v, l]) => (
           <button key={v} onClick={() => setStatusFilter(v)} className={cn("px-4 py-2 rounded-xl text-sm border transition-colors", statusFilter === v ? "bg-primary text-primary-foreground" : "border-border hover:bg-muted")}>{l}</button>
         ))}
+      </div>
+
+      <div className="relative">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="البحث باسم العميل أو المورد..."
+          value={searchTerm}
+          onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
+          className="w-full h-12 pr-12 pl-4 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
       </div>
 
       <div className="bg-card border border-border rounded-2xl overflow-hidden">

@@ -8,11 +8,11 @@ const prisma = new PrismaClient();
 const expenseSchema = z.object({
   expenseCategoryId: z.number().int(),
   branchId: z.number().int(),
-  title: z.string().min(3).max(200),
+  title: z.string().min(2).max(200),
   description: z.string().optional(),
   amount: z.number().positive(),
-  expenseDate: z.string().datetime().optional(),
-  paymentMethod: z.enum(['cash', 'card', 'transfer', 'check']).default('cash'),
+  expenseDate: z.string().optional(),
+  paymentMethod: z.enum(['cash', 'card', 'transfer', 'check', 'bank_transfer']).default('cash'),
   referenceNumber: z.string().optional(),
   receiptImage: z.string().optional(),
   notes: z.string().optional()
@@ -143,25 +143,30 @@ export const getExpenseStatistics = async (req: Request, res: Response, next: Ne
     let startDate: Date;
 
     switch (period) {
-      case 'today':
-        startDate = new Date(now.setHours(0, 0, 0, 0));
+      case 'today': {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
-      case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
+      }
+      case 'week': {
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
         break;
-      case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+      }
+      case 'month': {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
-      case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+      }
+      case 'year': {
+        startDate = new Date(now.getFullYear(), 0, 1);
         break;
-      default:
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+      }
+      default: {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
     }
 
     const where: any = {
       expenseDate: { gte: startDate },
-      status: 'approved',
       deletedAt: null
     };
 
@@ -283,7 +288,7 @@ export const createExpense = async (req: Request, res: Response, next: NextFunct
         ...validatedData,
         userId,
         expenseDate: validatedData.expenseDate ? new Date(validatedData.expenseDate) : new Date(),
-        status: 'pending'
+        status: 'approved'
       },
       include: {
         category: true,
@@ -329,13 +334,6 @@ export const updateExpense = async (req: Request, res: Response, next: NextFunct
       return res.status(404).json({
         success: false,
         message: 'المصروف غير موجود'
-      });
-    }
-
-    if (existing.status === 'approved') {
-      return res.status(400).json({
-        success: false,
-        message: 'لا يمكن تعديل مصروف تمت الموافقة عليه'
       });
     }
 

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Building, Pencil, Trash2, Loader2, X, Landmark } from "lucide-react"
-import { cn, formatCurrency } from "@/lib/utils"
+import { Plus, Building, Pencil, Trash2, Loader2, X, Landmark, Search } from "lucide-react"
+import { formatCurrency } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
 
@@ -18,7 +18,7 @@ interface BankAccount {
 }
 
 const bankApi = {
-  getAll: () => api.get('/bank-accounts').then(r => r.data),
+  getAll: (params?: any) => api.get('/bank-accounts', { params }).then(r => r.data),
   create: (data: any) => api.post('/bank-accounts', data).then(r => r.data),
   update: (id: number, data: any) => api.put(`/bank-accounts/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/bank-accounts/${id}`).then(r => r.data),
@@ -31,8 +31,12 @@ export default function BankAccountsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null)
   const [form, setForm] = useState(defaultForm)
+  const [searchTerm, setSearchTerm] = useState("")
 
-  const { data: res, isLoading } = useQuery({ queryKey: ["bank-accounts"], queryFn: bankApi.getAll })
+  const { data: res, isLoading } = useQuery({
+    queryKey: ["bank-accounts", searchTerm],
+    queryFn: () => bankApi.getAll({ search: searchTerm || undefined }),
+  })
 
   const createMutation = useMutation({
     mutationFn: bankApi.create,
@@ -73,6 +77,17 @@ export default function BankAccountsPage() {
         <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
           <Plus className="w-4 h-4" /> إضافة حساب
         </button>
+      </div>
+
+      <div className="relative max-w-md">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="البحث باسم الحساب أو البنك أو رقم الحساب..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full h-12 pr-12 pl-4 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
       </div>
 
       {/* Total Balance */}

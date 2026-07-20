@@ -8,14 +8,23 @@ const prisma = new PrismaClient();
 const branchSchema = z.object({
   name: z.string().min(3).max(100),
   code: z.string().min(2).max(20),
-  phone: z.string().regex(/^[0-9+\-() ]{10,20}$/).optional(),
-  email: z.string().email().optional(),
+  phone: z.string().min(8).max(20).optional().or(z.literal('')),
+  email: z.string().email().optional().or(z.literal('')),
   address: z.string().optional(),
   city: z.string().optional(),
   region: z.string().optional(),
   isActive: z.boolean().default(true),
   isMain: z.boolean().default(false)
 });
+
+function cleanBranchPayload(body: any) {
+  const data = { ...body };
+  if (data.email === '') delete data.email;
+  if (data.phone === '') delete data.phone;
+  if (data.address === '') delete data.address;
+  if (data.city === '') delete data.city;
+  return data;
+}
 
 /**
  * @route   GET /api/branches
@@ -123,10 +132,15 @@ export const getAllBranches = async (req: Request, res: Response, next: NextFunc
  */
 export const getBranchStatistics = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [total, active, main] = await Promise.all([
+    const [total, active, main, employees, salesAgg] = await Promise.all([
       prisma.branch.count({ where: { deletedAt: null } }),
       prisma.branch.count({ where: { isActive: true, deletedAt: null } }),
-      prisma.branch.count({ where: { isMain: true, deletedAt: null } })
+      prisma.branch.count({ where: { isMain: true, deletedAt: null } }),
+      prisma.user.count({ where: { isActive: true, deletedAt: null } }),
+      prisma.sale.aggregate({
+        where: { status: 'completed', deletedAt: null },
+        _sum: { totalAmount: true }
+      })
     ]);
 
     res.json({
@@ -136,7 +150,9 @@ export const getBranchStatistics = async (req: Request, res: Response, next: Nex
         active,
         inactive: total - active,
         mainBranches: main,
-        subBranches: total - main
+        subBranches: total - main,
+        total_employees: employees,
+        total_sales: salesAgg._sum.totalAmount?.toNumber?.() || Number(salesAgg._sum.totalAmount) || 0
       }
     });
   } catch (error) {
@@ -253,7 +269,7 @@ export const getBranchById = async (req: Request, res: Response, next: NextFunct
  */
 export const createBranch = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const validatedData = branchSchema.parse(req.body);
+    const validatedData = branchSchema.parse(cleanBranchPayload(req.body));
 
     // Check if code already exists
     const existingCode = await prisma.branch.findUnique({
@@ -304,7 +320,7 @@ export const createBranch = async (req: Request, res: Response, next: NextFuncti
 export const updateBranch = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const validatedData = branchSchema.partial().parse(req.body);
+    const validatedData = branchSchema.partial().parse(cleanBranchPayload(req.body));
 
     const existing = await prisma.branch.findUnique({
       where: { id: parseInt(id) }

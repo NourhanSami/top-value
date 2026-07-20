@@ -8,8 +8,8 @@ const prisma = new PrismaClient();
 const createPurchaseOrderSchema = z.object({
   supplierId: z.number().int(),
   branchId: z.number().int(),
-  orderDate: z.string().datetime().optional(),
-  expectedDeliveryDate: z.string().datetime().optional(),
+  orderDate: z.string().optional(),
+  expectedDeliveryDate: z.string().optional(),
   items: z.array(z.object({
     productId: z.number().int(),
     quantityOrdered: z.number().int().positive(),
@@ -69,7 +69,11 @@ export const getAllPurchaseOrders = async (req: Request, res: Response, next: Ne
     const where: any = { deletedAt: null };
 
     if (search) {
-      where.orderNumber = { contains: search as string };
+      where.OR = [
+        { orderNumber: { contains: search as string } },
+        { supplier: { name: { contains: search as string } } },
+        { notes: { contains: search as string } },
+      ];
     }
 
     if (supplierId) {
@@ -148,61 +152,51 @@ export const getAllPurchaseOrders = async (req: Request, res: Response, next: Ne
  */
 export const getPurchaseOrderStatistics = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { period = 'month', branchId } = req.query;
-
+    const { branchId } = req.query;
     const now = new Date();
-    let startDate: Date;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    switch (period) {
-      case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
-        break;
-      case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-        break;
-      case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
-        break;
-      default:
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-    }
+    const baseWhere: any = { deletedAt: null };
+    if (branchId) baseWhere.branchId = parseInt(branchId as string);
 
-    const where: any = {
-      orderDate: { gte: startDate },
-      deletedAt: null
-    };
-
-    if (branchId) {
-      where.branchId = parseInt(branchId as string);
-    }
-
-    const [stats, statusCounts] = await Promise.all([
+    const [total, pending, received, ordered, cancelled, monthAgg, allStatusCounts] = await Promise.all([
+      prisma.purchaseOrder.count({ where: baseWhere }),
+      prisma.purchaseOrder.count({ where: { ...baseWhere, status: 'pending' } }),
+      prisma.purchaseOrder.count({ where: { ...baseWhere, status: 'received' } }),
+      prisma.purchaseOrder.count({ where: { ...baseWhere, status: 'ordered' } }),
+      prisma.purchaseOrder.count({ where: { ...baseWhere, status: 'cancelled' } }),
       prisma.purchaseOrder.aggregate({
-        where,
-        _sum: { totalAmount: true, paidAmount: true },
+        where: { ...baseWhere, orderDate: { gte: monthStart } },
+        _sum: { totalAmount: true },
         _count: true,
-        _avg: { totalAmount: true }
       }),
       prisma.purchaseOrder.groupBy({
         by: ['status'],
-        where,
-        _count: true
-      })
+        where: baseWhere,
+        _count: true,
+      }),
     ]);
+
+    const thisMonthTotal = monthAgg._sum.totalAmount
+      ? (typeof monthAgg._sum.totalAmount === 'object' && 'toNumber' in monthAgg._sum.totalAmount
+          ? monthAgg._sum.totalAmount.toNumber()
+          : Number(monthAgg._sum.totalAmount))
+      : 0;
 
     res.json({
       success: true,
       data: {
-        period,
-        totalOrders: stats._count,
-        totalAmount: stats._sum.totalAmount || 0,
-        paidAmount: stats._sum.paidAmount || 0,
-        pendingAmount: (stats._sum.totalAmount?.toNumber() || 0) - (stats._sum.paidAmount?.toNumber() || 0),
-        averageOrderValue: stats._avg.totalAmount || 0,
-        statusBreakdown: statusCounts.reduce((acc, item) => {
+        total,
+        pending,
+        received,
+        ordered,
+        cancelled,
+        this_month_total: thisMonthTotal,
+        this_month_count: monthAgg._count,
+        statusBreakdown: allStatusCounts.reduce((acc, item) => {
           acc[item.status] = item._count;
           return acc;
-        }, {} as Record<string, number>)
+        }, {} as Record<string, number>),
       }
     });
   } catch (error) {
@@ -438,6 +432,17 @@ export const receivePurchaseOrder = async (req: Request, res: Response, next: Ne
       // Update order status
       const newStatus = allReceived ? 'received' : (partiallyReceived ? 'partial' : 'pending');
 
+      // عند الاستلام الكامل لأول مرة: زيادة رصيد المورد المستحق
+      if (newStatus === 'received' && order.status !== 'received') {
+        const unpaid = Number(order.totalAmount) - Number(order.paidAmount);
+        if (unpaid > 0) {
+          await tx.supplier.update({
+            where: { id: order.supplierId },
+            data: { currentBalance: { increment: unpaid } }
+          });
+        }
+      }
+
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id: parseInt(id) },
         data: {
@@ -492,17 +497,57 @@ export const updatePurchaseOrderStatus = async (req: Request, res: Response, nex
       });
     }
 
-    const order = await prisma.purchaseOrder.update({
-      where: { id: parseInt(id) },
-      data: { status },
-      include: {
-        supplier: true,
-        items: {
-          include: {
-            product: true
-          }
+    const existing = await prisma.purchaseOrder.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!existing || existing.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        message: 'أمر الشراء غير موجود'
+      });
+    }
+
+    const order = await prisma.$transaction(async (tx) => {
+      // عند الاستلام: زيادة رصيد المورد بالمبلغ غير المدفوع (ما علينا للمورد)
+      if (status === 'received' && existing.status !== 'received') {
+        const unpaid = Number(existing.totalAmount) - Number(existing.paidAmount);
+        if (unpaid > 0) {
+          await tx.supplier.update({
+            where: { id: existing.supplierId },
+            data: { currentBalance: { increment: unpaid } }
+          });
         }
       }
+
+      // لو اتلغى طلب كان مستلم: نرجّع الرصيد
+      if (status === 'cancelled' && existing.status === 'received') {
+        const unpaid = Number(existing.totalAmount) - Number(existing.paidAmount);
+        if (unpaid > 0) {
+          await tx.supplier.update({
+            where: { id: existing.supplierId },
+            data: { currentBalance: { decrement: unpaid } }
+          });
+        }
+      }
+
+      return tx.purchaseOrder.update({
+        where: { id: parseInt(id) },
+        data: {
+          status,
+          ...(status === 'received' && !existing.receivedDate
+            ? { receivedDate: new Date() }
+            : {}),
+        },
+        include: {
+          supplier: true,
+          items: {
+            include: {
+              product: true
+            }
+          }
+        }
+      });
     });
 
     res.json({

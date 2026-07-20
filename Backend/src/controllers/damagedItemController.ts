@@ -17,13 +17,20 @@ const createDamagedSchema = z.object({
 
 export const getAllDamagedItems = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = '1', limit = '20', status, damageType, branchId } = req.query;
+    const { page = '1', limit = '20', status, damageType, branchId, search } = req.query;
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const where: any = {};
     if (status) where.status = status;
     if (damageType) where.damageType = damageType;
     if (branchId) where.branchId = parseInt(branchId as string);
+    if (search) {
+      where.OR = [
+        { reason: { contains: search as string } },
+        { product: { name: { contains: search as string } } },
+        { product: { sku: { contains: search as string } } },
+      ];
+    }
 
     const [items, total] = await Promise.all([
       prisma.damagedItem.findMany({

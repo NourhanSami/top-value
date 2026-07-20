@@ -49,7 +49,11 @@ export default function Reports() {
     queryFn: () => dashboardService.getStatistics(),
   })
 
-  const stats = statsResponse?.data
+  const dash = statsResponse?.data
+  const topSales = Number(dash?.sales?.thisMonth || dash?.sales?.allTime || 0)
+  const topOrders = Number(dash?.sales?.totalOrders || dash?.sales?.allTimeOrders || 0)
+  const topProducts = Number(dash?.products?.total || 0)
+  const topCustomers = Number(dash?.customers?.total || 0)
 
   const reportTabs = [
     { id: "sales" as ReportType, label: "تقرير المبيعات", icon: ShoppingCart },
@@ -111,25 +115,25 @@ export default function Reports() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="إجمالي المبيعات"
-          value={formatCurrency(stats?.total_sales || 0)}
+          value={formatCurrency(topSales)}
           icon={DollarSign}
           variant="primary"
         />
         <StatCard
           title="عدد الطلبات"
-          value={stats?.total_orders || 0}
+          value={topOrders}
           icon={ShoppingCart}
           variant="success"
         />
         <StatCard
           title="منتجات في المخزون"
-          value={stats?.total_products || 0}
+          value={topProducts}
           icon={Package}
           variant="info"
         />
         <StatCard
           title="عملاء نشطون"
-          value={stats?.active_customers || 0}
+          value={topCustomers}
           icon={Users}
           variant="warning"
         />
@@ -243,16 +247,19 @@ function SalesReport({ dateRange }: { dateRange: DateRange }) {
   const chartData = chartDataResponse?.data?.chartData || []
 
   // Transform chart data for Recharts
-  const salesChartData = chartData.map((item: any) => ({
-    date: new Date(item.date).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }),
-    amount: parseFloat(item.amount || 0)
-  }))
+  const salesChartData = chartData
+    .filter((item: any) => Number(item.amount || 0) > 0)
+    .map((item: any) => ({
+      date: new Date(item.date).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }),
+      amount: parseFloat(item.amount || 0)
+    }))
 
   // Payment methods breakdown
   const paymentMethodsData = [
-    { name: "نقدي", value: stats?.cash_sales || 0, color: COLORS.success },
-    { name: "بطاقة", value: stats?.card_sales || 0, color: COLORS.info },
-    { name: "آجل", value: stats?.credit_sales || 0, color: COLORS.warning },
+    { name: "نقدي", value: Number(stats?.cashSales || stats?.byPaymentMethod?.cash || 0), color: COLORS.success },
+    { name: "بطاقة", value: Number(stats?.cardSales || stats?.byPaymentMethod?.card || 0), color: COLORS.info },
+    { name: "آجل", value: Number(stats?.creditSales || stats?.byPaymentMethod?.credit || 0), color: COLORS.warning },
+    { name: "تحويل", value: Number(stats?.byPaymentMethod?.transfer || 0), color: COLORS.purple },
   ].filter(item => item.value > 0)
 
   return (
@@ -265,19 +272,19 @@ function SalesReport({ dateRange }: { dateRange: DateRange }) {
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">إجمالي المبيعات</p>
             <p className="text-2xl font-bold text-primary">
-              {formatCurrency(stats?.total_amount || 0)}
+              {formatCurrency(Number(stats?.totalSales || 0))}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">عدد الفواتير</p>
             <p className="text-2xl font-bold text-success">
-              {stats?.total_invoices || 0}
+              {Number(stats?.totalOrders || 0)}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">متوسط الفاتورة</p>
             <p className="text-2xl font-bold text-info">
-              {formatCurrency(stats?.average_invoice || 0)}
+              {formatCurrency(Number(stats?.averageOrderValue || 0))}
             </p>
           </div>
         </div>
@@ -370,19 +377,22 @@ function InventoryReport() {
 
   // Stock status breakdown
   const stockStatusData = [
-    { name: "متوفر", value: (stats?.in_stock || 0), color: COLORS.success },
-    { name: "مخزون منخفض", value: (stats?.low_stock || 0), color: COLORS.warning },
-    { name: "نفذ من المخزون", value: (stats?.out_of_stock || 0), color: COLORS.destructive },
+    { name: "متوفر", value: Number(stats?.available || stats?.in_stock || 0), color: COLORS.success },
+    { name: "مخزون منخفض", value: Number(stats?.low || stats?.low_stock || 0), color: COLORS.warning },
+    { name: "نفذ من المخزون", value: Number(stats?.outOfStock || stats?.out_of_stock || 0), color: COLORS.destructive },
   ].filter(item => item.value > 0)
 
   // Top products by stock value
   const topProductsByValue = products
     .map((p: any) => ({
       name: p.name,
-      value: parseFloat(p.sellingPrice || 0) * (p.stockQuantity || 0)
+      value: parseFloat(p.costPrice || p.sellingPrice || 0) * (p.stockQuantity || 0)
     }))
     .sort((a: any, b: any) => b.value - a.value)
     .slice(0, 10)
+
+  const inventoryValue = Number(stats?.totalValue || stats?.total_value || 0) ||
+    topProductsByValue.reduce((s: number, p: any) => s + p.value, 0)
 
   return (
     <div className="space-y-6">
@@ -394,19 +404,19 @@ function InventoryReport() {
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">إجمالي المنتجات</p>
             <p className="text-2xl font-bold text-primary">
-              {stats?.total || 0}
+              {Number(stats?.total || 0)}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">مخزون منخفض</p>
             <p className="text-2xl font-bold text-destructive">
-              {stats?.low_stock || 0}
+              {Number(stats?.low || stats?.low_stock || 0)}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">قيمة المخزون</p>
             <p className="text-2xl font-bold text-success">
-              {formatCurrency(stats?.total_value || 0)}
+              {formatCurrency(inventoryValue)}
             </p>
           </div>
         </div>
@@ -486,18 +496,19 @@ function ProfitReport({ dateRange }: { dateRange: DateRange }) {
   const expenseStats = expenseStatsResponse?.data
   const chartData = chartDataResponse?.data?.chartData || []
 
-  const totalRevenue = parseFloat(salesStats?.total_amount || 0)
-  const totalExpenses = parseFloat(expenseStats?.total_amount || 0)
+  const totalRevenue = Number(salesStats?.totalSales || 0)
+  const totalExpenses = Number(expenseStats?.totalExpenses || expenseStats?.total_amount || 0)
   const netProfit = totalRevenue - totalExpenses
   const profitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0'
 
   // Transform chart data
-  const profitChartData = chartData.map((item: any) => ({
-    date: new Date(item.date).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }),
-    revenue: parseFloat(item.amount || 0),
-    // We don't have daily expenses, so this is simplified
-    profit: parseFloat(item.amount || 0) * 0.7 // Assuming 30% cost ratio
-  }))
+  const profitChartData = chartData
+    .filter((item: any) => Number(item.amount || 0) > 0)
+    .map((item: any) => ({
+      date: new Date(item.date).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }),
+      revenue: parseFloat(item.amount || 0),
+      profit: parseFloat(item.amount || 0) * 0.7
+    }))
 
   return (
     <div className="space-y-6">
@@ -621,17 +632,18 @@ function CustomersReport() {
 
   // Customer tier distribution
   const tierData = [
-    { name: "عادي", value: stats?.regular_customers || 0, color: COLORS.info },
-    { name: "فضي", value: stats?.silver_customers || 0, color: "#94a3b8" },
-    { name: "ذهبي", value: stats?.gold_customers || 0, color: COLORS.warning },
-    { name: "بلاتيني", value: stats?.platinum_customers || 0, color: COLORS.purple },
+    { name: "عادي", value: Number(stats?.regular_customers || Math.max(0, Number(stats?.total || 0) - Number(stats?.vipCount || 0))), color: COLORS.info },
+    { name: "فضي", value: Number(stats?.silver_customers || 0), color: "#94a3b8" },
+    { name: "ذهبي", value: Number(stats?.gold_customers || 0), color: COLORS.warning },
+    { name: "بلاتيني", value: Number(stats?.platinum_customers || 0), color: COLORS.purple },
+    { name: "VIP", value: Number(stats?.vipCount || 0), color: COLORS.warning },
   ].filter(item => item.value > 0)
 
   // Top customers by balance
   const topCustomersByBalance = customers
     .map((c: any) => ({
       name: c.name,
-      balance: parseFloat(c.balance || 0)
+      balance: parseFloat(c.currentBalance ?? c.balance ?? 0)
     }))
     .filter((c: any) => c.balance > 0)
     .sort((a: any, b: any) => b.balance - a.balance)
@@ -647,25 +659,25 @@ function CustomersReport() {
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">إجمالي العملاء</p>
             <p className="text-2xl font-bold text-primary">
-              {stats?.total || 0}
+              {Number(stats?.total || 0)}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">عملاء نشطون</p>
             <p className="text-2xl font-bold text-success">
-              {stats?.active || 0}
+              {Number(stats?.activeCustomers || stats?.active || 0)}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">عملاء VIP</p>
             <p className="text-2xl font-bold text-warning">
-              {(stats?.gold_customers || 0) + (stats?.platinum_customers || 0)}
+              {Number(stats?.vipCount || 0) + Number(stats?.gold_customers || 0) + Number(stats?.platinum_customers || 0)}
             </p>
           </div>
           <div className="p-4 bg-accent rounded-xl">
             <p className="text-sm text-muted-foreground mb-1">إجمالي الأرصدة</p>
             <p className="text-2xl font-bold text-info">
-              {formatCurrency(stats?.total_balance || 0)}
+              {formatCurrency(Number(stats?.totalDebt || stats?.total_balance || 0))}
             </p>
           </div>
         </div>

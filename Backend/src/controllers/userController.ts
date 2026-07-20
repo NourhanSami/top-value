@@ -10,7 +10,7 @@ const createUserSchema = z.object({
   name: z.string().min(3).max(100),
   email: z.string().email(),
   password: z.string().min(8),
-  phone: z.string().regex(/^[0-9+\-() ]{10,20}$/).optional(),
+  phone: z.string().min(7).max(20).optional().or(z.literal('')),
   branchId: z.number().int().optional(),
   roleIds: z.array(z.number().int()).min(1, 'يجب تحديد صلاحية واحدة على الأقل'),
   isActive: z.boolean().default(true)
@@ -20,7 +20,7 @@ const updateUserSchema = z.object({
   name: z.string().min(3).max(100).optional(),
   email: z.string().email().optional(),
   password: z.string().min(8).optional(),
-  phone: z.string().regex(/^[0-9+\-() ]{10,20}$/).optional(),
+  phone: z.string().min(7).max(20).optional().or(z.literal('')),
   branchId: z.number().int().optional(),
   roleIds: z.array(z.number().int()).optional(),
   isActive: z.boolean().optional()
@@ -66,11 +66,17 @@ export const getAllUsers = async (req: Request, res: Response, next: NextFunctio
       where.isActive = isActive === 'true';
     }
 
-    // Role filter
+    // Role filter by id or name
     if (roleId) {
       where.roles = {
         some: {
           roleId: parseInt(roleId as string)
+        }
+      };
+    } else if (req.query.role && req.query.role !== 'all') {
+      where.roles = {
+        some: {
+          role: { name: req.query.role as string }
         }
       };
     }
@@ -150,9 +156,14 @@ export const getUserStatistics = async (req: Request, res: Response, next: NextF
     const roleIds = byRole.map(r => r.roleId);
     const roles = await prisma.role.findMany({
       where: { id: { in: roleIds } },
-      select: { id: true, displayName: true }
+      select: { id: true, name: true, displayName: true }
     });
-    const roleMap = new Map(roles.map(r => [r.id, r.displayName]));
+    const roleMap = new Map(roles.map(r => [r.id, r]));
+
+    const countByRoleName = (names: string[]) =>
+      byRole
+        .filter(r => names.includes(roleMap.get(r.roleId)?.name || ''))
+        .reduce((sum, r) => sum + r._count, 0);
 
     res.json({
       success: true,
@@ -160,9 +171,12 @@ export const getUserStatistics = async (req: Request, res: Response, next: NextF
         total,
         active,
         inactive: total - active,
+        admins: countByRoleName(['admin', 'manager']),
+        cashiers: countByRoleName(['cashier']),
         byRole: byRole.map(r => ({
           roleId: r.roleId,
-          roleName: roleMap.get(r.roleId) || 'غير معروف',
+          roleName: roleMap.get(r.roleId)?.displayName || 'غير معروف',
+          roleKey: roleMap.get(r.roleId)?.name || '',
           count: r._count
         }))
       }
@@ -289,11 +303,12 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
     const hashedPassword = await hashPassword(validatedData.password);
 
     // Create user with roles
-    const { roleIds, ...userData } = validatedData;
+    const { roleIds, phone, ...userData } = validatedData;
 
     const user = await prisma.user.create({
       data: {
         ...userData,
+        phone: phone || null,
         password: hashedPassword,
         roles: {
           create: roleIds.map(roleId => ({ roleId }))

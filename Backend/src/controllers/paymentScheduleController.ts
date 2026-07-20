@@ -16,14 +16,26 @@ const createScheduleSchema = z.object({
 
 export const getAllSchedules = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = '1', limit = '20', status, customerId, supplierId, overdue } = req.query;
+    const { page = '1', limit = '20', status, customerId, supplierId, overdue, search } = req.query;
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const where: any = {};
-    if (status) where.status = status;
+    if (status && status !== 'overdue') where.status = status;
     if (customerId) where.customerId = parseInt(customerId as string);
     if (supplierId) where.supplierId = parseInt(supplierId as string);
-    if (overdue === 'true') { where.dueDate = { lt: new Date() }; where.status = { not: 'paid' }; }
+    if (overdue === 'true' || status === 'overdue') {
+      where.dueDate = { lt: new Date() };
+      where.status = { not: 'paid' };
+    }
+    if (search) {
+      const q = search as string;
+      where.OR = [
+        { notes: { contains: q } },
+        { customer: { name: { contains: q } } },
+        { customer: { phone: { contains: q } } },
+        { supplier: { name: { contains: q } } },
+      ];
+    }
 
     const [schedules, total] = await Promise.all([
       prisma.paymentSchedule.findMany({

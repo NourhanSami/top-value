@@ -13,6 +13,8 @@ import {
   XCircle,
   Clock,
   DollarSign,
+  Eye,
+  X,
 } from "lucide-react"
 import { StatCard } from "@/components/ui/StatCard"
 import { cn, formatCurrency, formatDate } from "@/lib/utils"
@@ -56,10 +58,19 @@ export default function DamagedItems() {
   const [damageTypeFilter, setDamageTypeFilter] = useState<DamageTypeFilter>("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [viewItem, setViewItem] = useState<any>(null)
 
   const { data: itemsResponse, isLoading } = useQuery({
     queryKey: ["damaged-items", searchTerm, statusFilter, damageTypeFilter, currentPage],
-    queryFn: () => api.get('/damaged-items', { params: { status: statusFilter !== "all" ? statusFilter : undefined, damageType: damageTypeFilter !== "all" ? damageTypeFilter : undefined, page: currentPage, limit: 20 } }).then(r => r.data),
+    queryFn: () => api.get('/damaged-items', {
+      params: {
+        search: searchTerm || undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        damageType: damageTypeFilter !== "all" ? damageTypeFilter : undefined,
+        page: currentPage,
+        limit: 20,
+      }
+    }).then(r => r.data),
   })
 
   const { data: statsResponse } = useQuery({
@@ -244,12 +255,37 @@ export default function DamagedItems() {
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-border hover:bg-muted/50 transition-colors">
-                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
-                    <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>قريباً - سيتم عرض الهوالك هنا</p>
-                  </td>
-                </tr>
+                {items.map((item: any) => {
+                  const status = getStatusBadge(item.status)
+                  const StatusIcon = status.icon
+                  return (
+                    <tr key={item.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                      <td className="py-4 px-4 text-sm font-medium">{item.product?.name || "—"}</td>
+                      <td className="py-4 px-4 text-sm">{item.branch?.name || "—"}</td>
+                      <td className="py-4 px-4 text-sm">{item.quantity}</td>
+                      <td className="py-4 px-4 text-sm font-semibold text-destructive">{formatCurrency(Number(item.lossAmount || 0))}</td>
+                      <td className="py-4 px-4 text-sm">{getDamageTypeLabel(item.damageType)}</td>
+                      <td className="py-4 px-4">
+                        <span className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium", status.className)}>
+                          <StatusIcon className="w-3 h-3" />
+                          {status.label}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-sm max-w-[160px] truncate">{item.reason}</td>
+                      <td className="py-4 px-4 text-sm">{item.user?.name || "—"}</td>
+                      <td className="py-4 px-4 text-sm text-muted-foreground">{formatDate(item.damagedAt || item.createdAt)}</td>
+                      <td className="py-4 px-4">
+                        <button
+                          onClick={() => setViewItem(item)}
+                          className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                          title="عرض التفاصيل"
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -259,6 +295,29 @@ export default function DamagedItems() {
       {/* Add Damaged Item Dialog */}
       {showAddDialog && (
         <AddDamagedItemDialog onClose={() => setShowAddDialog(false)} onSubmit={data => addMutation.mutate(data)} submitting={addMutation.isPending} />
+      )}
+
+      {viewItem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-lg font-bold">تفاصيل الهالك</h2>
+              <button onClick={() => setViewItem(null)} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6 space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">المنتج</span><strong>{viewItem.product?.name}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">الفرع</span><strong>{viewItem.branch?.name}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">الكمية</span><strong>{viewItem.quantity}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">قيمة الخسارة</span><strong className="text-destructive">{formatCurrency(Number(viewItem.lossAmount || 0))}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">النوع</span><strong>{getDamageTypeLabel(viewItem.damageType)}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">الحالة</span><strong>{getStatusBadge(viewItem.status).label}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">المُبلّغ</span><strong>{viewItem.user?.name || "—"}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">التاريخ</span><strong>{formatDate(viewItem.damagedAt || viewItem.createdAt)}</strong></div>
+              <div><span className="text-muted-foreground">السبب:</span><p className="mt-1 font-medium">{viewItem.reason}</p></div>
+              {viewItem.notes && <div><span className="text-muted-foreground">ملاحظات:</span><p className="mt-1">{viewItem.notes}</p></div>}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

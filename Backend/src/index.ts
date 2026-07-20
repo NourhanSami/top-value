@@ -78,6 +78,8 @@ import attachmentRoutes from './routes/attachmentRoutes';
 import bankAccountRoutes from './routes/bankAccountRoutes';
 import inventoryTransferRoutes from './routes/inventoryTransferRoutes';
 import emailRoutes from './routes/emailRoutes';
+import capitalRoutes from './routes/capitalRoutes';
+import activityLogRoutes from './routes/activityLogRoutes';
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -101,6 +103,8 @@ app.use('/api/attachments', attachmentRoutes);
 app.use('/api/bank-accounts', bankAccountRoutes);
 app.use('/api/inventory-transfers', inventoryTransferRoutes);
 app.use('/api/email', emailRoutes);
+app.use('/api/capital', capitalRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
 
 // Error handling
 app.use(notFoundHandler);

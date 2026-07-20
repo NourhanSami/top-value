@@ -63,6 +63,19 @@ export const login = async (
       }
     });
 
+    // Log activity
+    try {
+      const { logActivity, metaFromReq } = await import('../services/activityLogService');
+      await logActivity({
+        userId: user.id,
+        action: 'login',
+        entityType: 'User',
+        entityId: user.id,
+        description: `تسجيل دخول — ${user.name}`,
+        ...metaFromReq(req),
+      });
+    } catch { /* ignore logging errors */ }
+
     // Generate tokens
     const tokens = generateTokens(user.id, user.email);
 

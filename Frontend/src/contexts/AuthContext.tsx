@@ -57,6 +57,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(parsedUser)
           setAuthToken(storedToken)
           
+          // Load app settings into cache
+          import('@/lib/settings').then(m => m.loadAndCacheSettings()).catch(() => {})
+          
           // Don't verify token on initialization to avoid race conditions
           // Token will be verified by the backend on first API call
         } catch (error) {
@@ -100,6 +103,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setToken(authToken)
       setUser(userData)
       setAuthToken(authToken)
+      import('@/lib/settings').then(m => m.loadAndCacheSettings()).catch(() => {})
     } catch (error) {
       console.error('Login failed:', error)
       throw error

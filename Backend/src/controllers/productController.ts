@@ -85,7 +85,7 @@ export const getAllProducts = async (req: Request, res: Response, next: NextFunc
     const skip = (pageNum - 1) * limitNum;
 
     // Build where clause
-    const where: any = {};
+    const where: any = { deletedAt: null };
 
     if (search) {
       where.OR = [
@@ -160,19 +160,32 @@ export const getAllProducts = async (req: Request, res: Response, next: NextFunc
 export const getProductStatistics = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const products = await prisma.product.findMany({
-      where: { isActive: true },
+      where: { isActive: true, deletedAt: null },
       select: {
         stockQuantity: true,
-        minStockLevel: true
+        minStockLevel: true,
+        costPrice: true,
+        sellingPrice: true,
       }
     });
+
+    const totalValue = products.reduce(
+      (sum, p) => sum + Number(p.costPrice || 0) * Number(p.stockQuantity || 0),
+      0
+    );
 
     const statistics = {
       total: products.length,
       available: products.filter(p => p.stockQuantity > p.minStockLevel * 2).length,
       medium: products.filter(p => p.stockQuantity > p.minStockLevel && p.stockQuantity <= p.minStockLevel * 2).length,
       low: products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= p.minStockLevel).length,
-      outOfStock: products.filter(p => p.stockQuantity === 0).length
+      outOfStock: products.filter(p => p.stockQuantity === 0).length,
+      // aliases for frontend compatibility
+      in_stock: products.filter(p => p.stockQuantity > p.minStockLevel).length,
+      low_stock: products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= p.minStockLevel).length,
+      out_of_stock: products.filter(p => p.stockQuantity === 0).length,
+      total_value: totalValue,
+      totalValue,
     };
 
     res.json({

@@ -170,31 +170,33 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
 
     const now = new Date();
     let startDate: Date;
+    let endDate: Date | undefined;
 
     switch (period) {
       case 'today':
-        startDate = new Date(now);
-        startDate.setHours(0, 0, 0, 0);
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
+      case 'yesterday': {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      }
       case 'week':
         startDate = new Date(now);
         startDate.setDate(startDate.getDate() - 7);
         break;
       case 'month':
-        startDate = new Date(now);
-        startDate.setMonth(startDate.getMonth() - 1);
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
       case 'year':
-        startDate = new Date(now);
-        startDate.setFullYear(startDate.getFullYear() - 1);
+        startDate = new Date(now.getFullYear(), 0, 1);
         break;
       default:
-        startDate = new Date(now);
-        startDate.setHours(0, 0, 0, 0);
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     }
 
     const baseWhere: any = {
-      saleDate: { gte: startDate },
+      saleDate: endDate ? { gte: startDate, lt: endDate } : { gte: startDate },
       deletedAt: null
     };
     if (branchId) {
@@ -203,7 +205,7 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
 
     const completedWhere = { ...baseWhere, status: 'completed' };
 
-    const [salesStats, completedCount, pendingCount, cancelledCount, previousPeriodStats] = await Promise.all([
+    const [salesStats, completedCount, pendingCount, cancelledCount, previousPeriodStats, paymentBreakdown] = await Promise.all([
       prisma.sale.aggregate({
         where: completedWhere,
         _sum: { totalAmount: true, paidAmount: true },
@@ -223,6 +225,12 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
         },
         _sum: { totalAmount: true },
         _count: true
+      }),
+      prisma.sale.groupBy({
+        by: ['paymentMethod'],
+        where: completedWhere,
+        _sum: { totalAmount: true },
+        _count: true
       })
     ]);
 
@@ -233,6 +241,13 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
     const salesChange = prevNum > 0
       ? ((totalNum - prevNum) / prevNum) * 100
       : 0;
+
+    const byPaymentMethod: Record<string, number> = {};
+    for (const row of paymentBreakdown) {
+      const amt = row._sum.totalAmount;
+      byPaymentMethod[row.paymentMethod] =
+        typeof amt === 'object' && amt && 'toNumber' in amt ? (amt as any).toNumber() : Number(amt || 0);
+    }
 
     res.json({
       success: true,
@@ -252,7 +267,11 @@ export const getSalesStatistics = async (req: Request, res: Response, next: Next
         salesChange: parseFloat(salesChange.toFixed(2)),
         ordersChange: previousPeriodStats._count > 0
           ? ((salesStats._count - previousPeriodStats._count) / previousPeriodStats._count) * 100
-          : 0
+          : 0,
+        byPaymentMethod,
+        cashSales: byPaymentMethod.cash || 0,
+        cardSales: byPaymentMethod.card || 0,
+        creditSales: byPaymentMethod.credit || 0,
       }
     });
   } catch (error) {
@@ -455,6 +474,19 @@ export const createSale = async (req: Request, res: Response, next: NextFunction
 
       return sale;
     });
+
+    try {
+      const { logActivity, metaFromReq } = await import('../services/activityLogService');
+      await logActivity({
+        userId: (req as any).user?.id,
+        action: 'sale',
+        entityType: 'Sale',
+        entityId: result.id,
+        description: `عملية بيع — فاتورة ${result.invoiceNumber} بمبلغ ${Number(result.totalAmount)}`,
+        newValues: { invoiceNumber: result.invoiceNumber, totalAmount: Number(result.totalAmount) },
+        ...metaFromReq(req),
+      });
+    } catch { /* ignore */ }
 
     res.status(201).json({
       success: true,

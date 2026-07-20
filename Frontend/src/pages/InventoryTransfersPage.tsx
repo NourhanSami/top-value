@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, ArrowLeftRight, X, Loader2, Package, CheckCircle } from "lucide-react"
+import { Plus, ArrowLeftRight, X, Loader2, Search } from "lucide-react"
 import { cn, formatDate } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
@@ -24,19 +24,28 @@ const transferApi = {
   create: (data: any) => api.post('/inventory-transfers', data).then(r => r.data),
 }
 const branchesApi = { getAll: () => api.get('/branches').then(r => r.data) }
-const productsApi = { search: (q: string) => api.get('/products', { params: { search: q, limit: 8 } }).then(r => r.data) }
 
 export default function InventoryTransfersPage() {
   const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [page, setPage] = useState(1)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [viewing, setViewing] = useState<InventoryTransfer | null>(null)
 
-  const { data: res, isLoading } = useQuery({ queryKey: ["transfers", page], queryFn: () => transferApi.getAll({ page, limit: 20 }) })
+  const { data: res, isLoading } = useQuery({
+    queryKey: ["transfers", page, searchTerm],
+    queryFn: () => transferApi.getAll({ page, limit: 20, search: searchTerm || undefined }),
+  })
   const { data: branchesRes } = useQuery({ queryKey: ["branches"], queryFn: branchesApi.getAll })
 
   const createMutation = useMutation({
     mutationFn: transferApi.create,
-    onSuccess: () => { toast.success("تم تحويل المخزون بنجاح"); queryClient.invalidateQueries({ queryKey: ["transfers"] }); queryClient.invalidateQueries({ queryKey: ["products"] }); setShowCreate(false) },
+    onSuccess: () => {
+      toast.success("تم تحويل المخزون بنجاح")
+      queryClient.invalidateQueries({ queryKey: ["transfers"] })
+      queryClient.invalidateQueries({ queryKey: ["products"] })
+      setShowCreate(false)
+    },
     onError: (e: any) => toast.error(e.response?.data?.message || "خطأ"),
   })
 
@@ -51,9 +60,31 @@ export default function InventoryTransfersPage() {
           <h1 className="text-2xl font-bold">تحويل المخزون بين الفروع</h1>
           <p className="text-sm text-muted-foreground mt-1">نقل المنتجات من فرع إلى آخر</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium">
+        <button
+          onClick={() => {
+            if (branches.length < 2) {
+              toast.error("يلزم وجود فرعين على الأقل لإتمام التحويل — أضف فرعاً من صفحة الفروع أولاً")
+              return
+            }
+            setShowCreate(true)
+          }}
+          className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 text-sm font-medium"
+        >
           <Plus className="w-4 h-4" /> تحويل جديد
         </button>
+      </div>
+
+      <div className="flat-card p-4">
+        <div className="relative max-w-md">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="بحث برقم التحويل أو اسم الفرع..."
+            value={searchTerm}
+            onChange={e => { setSearchTerm(e.target.value); setPage(1) }}
+            className="w-full pr-10 pl-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -71,13 +102,17 @@ export default function InventoryTransfersPage() {
                 </thead>
                 <tbody>
                   {transfers.map(t => (
-                    <tr key={t.id} className="border-t border-border hover:bg-muted/20 transition-colors">
+                    <tr
+                      key={t.id}
+                      onClick={() => setViewing(t)}
+                      className="border-t border-border hover:bg-muted/40 transition-colors cursor-pointer"
+                    >
                       <td className="px-4 py-3 font-mono font-medium text-primary">{t.transferNumber}</td>
-                      <td className="px-4 py-3">{t.fromBranch.name}</td>
-                      <td className="px-4 py-3">{t.toBranch.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{t.user.name}</td>
+                      <td className="px-4 py-3">{t.fromBranch?.name}</td>
+                      <td className="px-4 py-3">{t.toBranch?.name}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{t.user?.name}</td>
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(t.transferDate)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{t.items.length} منتج</td>
+                      <td className="px-4 py-3 text-muted-foreground">{t.items?.length || 0} منتج</td>
                       <td className="px-4 py-3">
                         <span className={cn("px-2 py-0.5 rounded-lg text-xs font-medium", t.status === "completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700")}>
                           {t.status === "completed" ? "مكتمل" : "قيد التنفيذ"}
@@ -99,6 +134,62 @@ export default function InventoryTransfersPage() {
       </div>
 
       {showCreate && <CreateTransferDialog branches={branches} onClose={() => setShowCreate(false)} onSubmit={createMutation.mutate} submitting={createMutation.isPending} />}
+
+      {viewing && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setViewing(null)}>
+          <div className="bg-card rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-lg font-bold">تفاصيل التحويل — {viewing.transferNumber}</h2>
+              <button onClick={() => setViewing(null)} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6 space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div><span className="text-muted-foreground">من فرع:</span> <strong>{viewing.fromBranch?.name}</strong></div>
+                <div><span className="text-muted-foreground">إلى فرع:</span> <strong>{viewing.toBranch?.name}</strong></div>
+                <div><span className="text-muted-foreground">بواسطة:</span> <strong>{viewing.user?.name}</strong></div>
+                <div><span className="text-muted-foreground">التاريخ:</span> <strong>{formatDate(viewing.transferDate)}</strong></div>
+                <div>
+                  <span className="text-muted-foreground">الحالة:</span>{" "}
+                  <strong>{viewing.status === "completed" ? "مكتمل" : "قيد التنفيذ"}</strong>
+                </div>
+                <div><span className="text-muted-foreground">عدد المنتجات:</span> <strong>{viewing.items?.length || 0}</strong></div>
+              </div>
+              {viewing.notes && (
+                <div>
+                  <span className="text-muted-foreground">ملاحظات:</span>
+                  <p className="mt-1 font-medium">{viewing.notes}</p>
+                </div>
+              )}
+              <div>
+                <h3 className="font-semibold mb-2">المنتجات المحوّلة</h3>
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      {["المنتج", "SKU", "الكمية"].map(h => (
+                        <th key={h} className="px-3 py-2 text-right font-medium text-muted-foreground">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(viewing.items || []).map(item => (
+                      <tr key={item.id} className="border-t border-border">
+                        <td className="px-3 py-2">{item.product?.name}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{item.product?.sku}</td>
+                        <td className="px-3 py-2 font-semibold">{item.quantity}</td>
+                      </tr>
+                    ))}
+                    {(!viewing.items || viewing.items.length === 0) && (
+                      <tr>
+                        <td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">لا توجد منتجات</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

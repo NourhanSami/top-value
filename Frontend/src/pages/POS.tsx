@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Search, Plus, Minus, Trash2, ShoppingCart, User, DollarSign, CreditCard, Wallet } from "lucide-react"
 import { cn, formatCurrency } from "@/lib/utils"
+import { getTaxConfig } from "@/lib/settings"
 import { productService, customerService, saleService } from "@/services/api.service"
 import { useAuth } from "@/contexts/AuthContext"
 import { SelectCustomerDialog } from "@/components/dialogs"
@@ -25,6 +26,14 @@ export default function POS() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>("cash")
   const [discountPercent, setDiscountPercent] = useState(0)
+  const taxCfg = getTaxConfig()
+
+  const getDiscountAmount = () => (getTotalAmount() * discountPercent) / 100
+  const getTaxAmount = () => {
+    if (!taxCfg.enabled) return 0
+    return ((getTotalAmount() - getDiscountAmount()) * taxCfg.rate) / 100
+  }
+  const getGrandTotal = () => getTotalAmount() - getDiscountAmount() + getTaxAmount()
 
   // Fetch products
   const { data: productsResponse } = useQuery({
@@ -184,9 +193,12 @@ export default function POS() {
 
     // Calculate totals
     const subtotal = getTotalAmount()
-    const taxAmount = 0
     const discountAmount = parseFloat(((subtotal * discountPercent) / 100).toFixed(2))
-    const totalAmount = subtotal + taxAmount - discountAmount
+    const afterDiscount = subtotal - discountAmount
+    const taxCfg = getTaxConfig()
+    const taxRate = taxCfg.enabled ? taxCfg.rate : 0
+    const taxAmount = parseFloat(((afterDiscount * taxRate) / 100).toFixed(2))
+    const totalAmount = afterDiscount + taxAmount
     const paidAmount = totalAmount
     const changeAmount = 0
 
@@ -197,7 +209,7 @@ export default function POS() {
         productId: item.product.id,
         quantity: item.quantity,
         unitPrice: parseFloat(String(item.product.price)),
-        taxRate: 0,
+        taxRate,
         discountRate: 0
       })),
       subtotal: parseFloat(subtotal.toFixed(2)),
@@ -416,7 +428,13 @@ export default function POS() {
             {discountPercent > 0 && (
               <div className="flex items-center justify-between mb-2 text-destructive">
                 <span className="text-sm">الخصم ({discountPercent}%)</span>
-                <span className="text-sm font-medium">- {formatCurrency((getTotalAmount() * discountPercent) / 100)}</span>
+                <span className="text-sm font-medium">- {formatCurrency(getDiscountAmount())}</span>
+              </div>
+            )}
+            {taxCfg.enabled && (
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">{taxCfg.name} ({taxCfg.rate}%)</span>
+                <span className="text-sm font-medium">{formatCurrency(getTaxAmount())}</span>
               </div>
             )}
             <div className="flex items-center justify-between mb-4">
@@ -424,7 +442,7 @@ export default function POS() {
                 الإجمالي
               </span>
               <span className="text-2xl font-bold text-primary">
-                {formatCurrency(getTotalAmount() - (getTotalAmount() * discountPercent) / 100)}
+                {formatCurrency(getGrandTotal())}
               </span>
             </div>
 
@@ -479,13 +497,21 @@ export default function POS() {
                 <span className="text-sm text-muted-foreground">المجموع الفرعي</span>
                 <span className="text-sm font-medium">{formatCurrency(getTotalAmount())}</span>
               </div>
+              {discountPercent > 0 && (
+                <div className="flex items-center justify-between mb-2 text-destructive">
+                  <span className="text-sm">الخصم</span>
+                  <span className="text-sm font-medium">- {formatCurrency(getDiscountAmount())}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">الضريبة (0%)</span>
-                <span className="text-sm font-medium">{formatCurrency(0)}</span>
+                <span className="text-sm text-muted-foreground">
+                  {taxCfg.enabled ? `${taxCfg.name} (${taxCfg.rate}%)` : "الضريبة (معطلة)"}
+                </span>
+                <span className="text-sm font-medium">{formatCurrency(getTaxAmount())}</span>
               </div>
               <div className="pt-2 border-t border-border flex items-center justify-between">
                 <span className="font-semibold">الإجمالي</span>
-                <span className="text-xl font-bold text-primary">{formatCurrency(getTotalAmount())}</span>
+                <span className="text-xl font-bold text-primary">{formatCurrency(getGrandTotal())}</span>
               </div>
             </div>
 

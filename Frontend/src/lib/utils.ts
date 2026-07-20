@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { getCurrencySymbol } from "./settings"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -11,7 +12,7 @@ export function formatCurrency(amount: number | string | null | undefined): stri
     style: 'decimal',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
-  }).format(n) + ' ر.س'
+  }).format(n) + ' ' + getCurrencySymbol()
 }
 
 export function formatDate(date: string | Date): string {

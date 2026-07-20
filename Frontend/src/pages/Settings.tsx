@@ -6,6 +6,7 @@ import {
 import { cn } from "@/lib/utils"
 import api from "@/lib/api"
 import toast from "react-hot-toast"
+import { syncSettingsToCache } from "@/lib/settings"
 
 type SettingsTab = "company" | "tax" | "print" | "notifications" | "smtp" | "security" | "backup"
 
@@ -22,7 +23,11 @@ function useSaveSettings() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: settingsApi.saveBulk,
-    onSuccess: () => { toast.success("تم حفظ الإعدادات بنجاح"); qc.invalidateQueries({ queryKey: ["settings"] }) },
+    onSuccess: (_data, variables) => {
+      syncSettingsToCache(variables)
+      toast.success("تم حفظ الإعدادات بنجاح — ستظهر التغييرات في الفواتير والمبيعات")
+      qc.invalidateQueries({ queryKey: ["settings"] })
+    },
     onError: () => toast.error("حدث خطأ أثناء الحفظ"),
   })
 }
@@ -36,6 +41,10 @@ export default function Settings() {
   const { data: settingsRes, isLoading } = useSettings()
   const saveMutation = useSaveSettings()
   const allSettings: any[] = settingsRes?.data || []
+
+  useEffect(() => {
+    if (allSettings.length) syncSettingsToCache(allSettings)
+  }, [allSettings])
 
   const tabs = [
     { id: "company" as SettingsTab, label: "معلومات الشركة", icon: Building2 },
@@ -124,28 +133,37 @@ function CompanySettings({ settings, onSave, saving }: { settings: any[]; onSave
 
 // ===== Tax Settings =====
 function TaxSettings({ settings, onSave, saving }: { settings: any[]; onSave: any; saving: boolean }) {
-  const [form, setForm] = useState({ tax_enabled: "true", tax_rate: "15", tax_name: "ضريبة القيمة المضافة" })
+  const [form, setForm] = useState({ tax_enabled: "true", tax_rate: "15", tax_name: "ضريبة القيمة المضافة", currency: "SAR" })
   useEffect(() => {
     setForm({
       tax_enabled: getVal(settings, "tax_enabled", "true"),
       tax_rate: getVal(settings, "tax_rate", "15"),
       tax_name: getVal(settings, "tax_name", "ضريبة القيمة المضافة"),
+      currency: getVal(settings, "currency", "SAR"),
     })
   }, [settings])
 
   const handleSave = () => onSave(Object.entries(form).map(([key, value]) => ({ key, value: value as string })))
 
   return (
-    <SettingsSection title="إعدادات الضرائب" icon={DollarSign} onSave={handleSave} saving={saving}>
+    <SettingsSection title="إعدادات الضرائب والعملة" icon={DollarSign} onSave={handleSave} saving={saving}>
       <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
         <div>
           <p className="font-medium">تفعيل الضريبة</p>
-          <p className="text-sm text-muted-foreground">تطبيق الضريبة على المبيعات</p>
+          <p className="text-sm text-muted-foreground">تطبيق الضريبة على المبيعات في نقطة البيع</p>
         </div>
         <Toggle checked={form.tax_enabled === "true"} onChange={v => setForm({ ...form, tax_enabled: v ? "true" : "false" })} />
       </div>
       <Field label="اسم الضريبة"><input value={form.tax_name} onChange={e => setForm({ ...form, tax_name: e.target.value })} className={inputCls} /></Field>
       <Field label="نسبة الضريبة (%)"><input type="number" min="0" max="100" step="0.01" value={form.tax_rate} onChange={e => setForm({ ...form, tax_rate: e.target.value })} className={inputCls} /></Field>
+      <Field label="العملة">
+        <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} className={inputCls}>
+          <option value="SAR">ر.س — ريال سعودي</option>
+          <option value="EGP">ج.م — جنيه مصري</option>
+          <option value="AED">د.إ — درهم إماراتي</option>
+          <option value="USD">$ — دولار أمريكي</option>
+        </select>
+      </Field>
     </SettingsSection>
   )
 }
@@ -273,7 +291,20 @@ function SecuritySettings({ settings, onSave, saving }: { settings: any[]; onSav
 
 // ===== Backup Settings =====
 function BackupSettings() {
-  const handleManualBackup = () => toast("قريباً: سيتم تحميل ملف النسخ الاحتياطي", { icon: "💾" })
+  const handleManualBackup = async () => {
+    try {
+      const res = await api.get("/settings/backup", { responseType: "blob" })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `backup-${new Date().toISOString().slice(0, 10)}.db`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success("تم تحميل النسخة الاحتياطية")
+    } catch {
+      toast.error("تعذر إنشاء النسخة الاحتياطية")
+    }
+  }
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-6">
@@ -281,11 +312,11 @@ function BackupSettings() {
         <h3 className="text-lg font-semibold">النسخ الاحتياطي</h3>
       </div>
       <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
-        آخر نسخة احتياطية: لم يتم إجراء نسخ احتياطي بعد
+        يمكنك تنزيل نسخة من قاعدة البيانات للاحتفاظ بها محلياً.
       </div>
       <button onClick={handleManualBackup} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm hover:bg-primary/90">
         <Database className="w-4 h-4" />
-        إنشاء نسخة احتياطية يدوياً
+        تنزيل نسخة احتياطية
       </button>
     </div>
   )

@@ -129,7 +129,6 @@ const navigationItems: NavItem[] = [
     label: "الموارد البشرية",
     icon: UserCog,
     children: [
-      { label: "الموظفين", icon: UserCog, path: "/employees" },
       { label: "المستخدمين", icon: UsersRound, path: "/users" },
     ],
     roles: ["مدير", "محاسب"],

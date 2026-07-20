@@ -9,17 +9,27 @@ const supplierSchema = z.object({
   name: z.string().min(3, 'الاسم يجب أن يكون 3 أحرف على الأقل').max(100),
   companyName: z.string().optional(),
   taxNumber: z.string().optional(),
-  phone: z.string().regex(/^[0-9+\-() ]{10,20}$/, 'رقم الهاتف غير صحيح'),
-  email: z.string().email('البريد الإلكتروني غير صحيح').optional(),
+  phone: z.string().min(8, 'رقم الهاتف غير صحيح').max(20),
+  email: z.string().email('البريد الإلكتروني غير صحيح').optional().or(z.literal('')),
   address: z.string().optional(),
   city: z.string().optional(),
   region: z.string().optional(),
   contactPerson: z.string().optional(),
-  contactPhone: z.string().regex(/^[0-9+\-() ]{10,20}$/, 'رقم الهاتف غير صحيح').optional(),
+  contactPhone: z.string().optional(),
   creditLimit: z.number().nonnegative().default(0),
   isActive: z.boolean().default(true),
   notes: z.string().optional()
 });
+
+function cleanSupplierPayload(body: any) {
+  const data = { ...body };
+  if (data.email === '') delete data.email;
+  if (data.address === '') delete data.address;
+  if (data.city === '') delete data.city;
+  if (data.companyName === '') delete data.companyName;
+  if (data.notes === '') delete data.notes;
+  return data;
+}
 
 /**
  * @route   GET /api/suppliers
@@ -99,15 +109,34 @@ export const getAllSuppliers = async (req: Request, res: Response, next: NextFun
  */
 export const getSupplierStatistics = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [total, activeCount, debtStats] = await Promise.all([
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [total, activeCount, debtStats, monthlyPurchases] = await Promise.all([
       prisma.supplier.count({ where: { deletedAt: null } }),
       prisma.supplier.count({ where: { isActive: true, deletedAt: null } }),
       prisma.supplier.aggregate({
         where: { currentBalance: { gt: 0 }, deletedAt: null },
         _sum: { currentBalance: true },
         _count: true
+      }),
+      prisma.purchaseOrder.aggregate({
+        where: { orderDate: { gte: monthStart }, deletedAt: null, status: { not: 'cancelled' } },
+        _sum: { totalAmount: true }
       })
     ]);
+
+    const totalDebt = debtStats._sum.currentBalance
+      ? (typeof debtStats._sum.currentBalance === 'object' && 'toNumber' in debtStats._sum.currentBalance
+          ? debtStats._sum.currentBalance.toNumber()
+          : Number(debtStats._sum.currentBalance))
+      : 0;
+    const monthly = monthlyPurchases._sum.totalAmount
+      ? (typeof monthlyPurchases._sum.totalAmount === 'object' && 'toNumber' in monthlyPurchases._sum.totalAmount
+          ? monthlyPurchases._sum.totalAmount.toNumber()
+          : Number(monthlyPurchases._sum.totalAmount))
+      : 0;
 
     res.json({
       success: true,
@@ -115,7 +144,9 @@ export const getSupplierStatistics = async (req: Request, res: Response, next: N
         total,
         active: activeCount,
         suppliersWithDebt: debtStats._count,
-        totalDebt: debtStats._sum.currentBalance || 0
+        totalDebt,
+        total_balance: totalDebt,
+        monthly_purchases: monthly,
       }
     });
   } catch (error) {
@@ -202,7 +233,7 @@ export const getSupplierById = async (req: Request, res: Response, next: NextFun
  */
 export const createSupplier = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const validatedData = supplierSchema.parse(req.body);
+    const validatedData = supplierSchema.parse(cleanSupplierPayload(req.body));
 
     // Check if phone already exists
     const existing = await prisma.supplier.findFirst({
@@ -248,7 +279,7 @@ export const createSupplier = async (req: Request, res: Response, next: NextFunc
 export const updateSupplier = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const validatedData = supplierSchema.partial().parse(req.body);
+    const validatedData = supplierSchema.partial().parse(cleanSupplierPayload(req.body));
 
     // Check if supplier exists
     const existing = await prisma.supplier.findUnique({

@@ -23,12 +23,20 @@ async function generateTransferNumber(): Promise<string> {
 
 export const getAllTransfers = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = '1', limit = '20', fromBranchId, toBranchId } = req.query;
+    const { page = '1', limit = '20', fromBranchId, toBranchId, search } = req.query;
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const where: any = {};
     if (fromBranchId) where.fromBranchId = parseInt(fromBranchId as string);
     if (toBranchId) where.toBranchId = parseInt(toBranchId as string);
+    if (search) {
+      where.OR = [
+        { transferNumber: { contains: search as string } },
+        { notes: { contains: search as string } },
+        { fromBranch: { name: { contains: search as string } } },
+        { toBranch: { name: { contains: search as string } } },
+      ];
+    }
 
     const [transfers, total] = await Promise.all([
       prisma.inventoryTransfer.findMany({
