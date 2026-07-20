@@ -10,6 +10,7 @@ export interface User {
   branch_id?: number
   branch_name?: string
   permissions?: string[]
+  menuAccess?: string[]
   avatar?: string
 }
 

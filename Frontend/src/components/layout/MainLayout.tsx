@@ -14,7 +14,7 @@ interface MainLayoutProps {
 export function MainLayout({ user, onLogout }: MainLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar userRole={user?.role} />
+      <Sidebar />
 
       <div className="mr-20 peer-hover:mr-64 transition-all duration-300">
         <Header user={user} onLogout={onLogout} />

@@ -14,6 +14,7 @@ declare global {
         branchId?: number;
         roles: string[];
         permissions: string[];
+        menuAccess: string[];
       };
     }
   }
@@ -77,6 +78,14 @@ export const authenticate = async (
       .map(rp => rp.permission.name)
       .filter((value, index, self) => self.indexOf(value) === index); // unique
 
+    let menuAccess: string[] = [];
+    if (user.menuAccess) {
+      try {
+        const parsed = JSON.parse(user.menuAccess);
+        if (Array.isArray(parsed)) menuAccess = parsed.map(String);
+      } catch { /* ignore */ }
+    }
+
     // Attach user to request
     req.user = {
       id: user.id,
@@ -84,7 +93,8 @@ export const authenticate = async (
       name: user.name,
       branchId: user.branchId || undefined,
       roles,
-      permissions
+      permissions,
+      menuAccess,
     };
 
     next();
@@ -93,14 +103,61 @@ export const authenticate = async (
   }
 };
 
+/** Allow if user has menu section access (or admin/manager). Falls back to role defaults when menuAccess empty. */
+export const requireMenuAccess = (...sections: string[]) => {
+  const roleDefaults: Record<string, string[]> = {
+    admin: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','hr','settings'],
+    manager: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
+    cashier: ['pos','sales','returns','customers'],
+    employee: ['returns','customers'],
+    accountant: ['dashboard','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
+  };
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(createError('Authentication required', 401));
+    }
+
+    if (req.user.roles.includes('admin') || req.user.roles.includes('manager')) {
+      return next();
+    }
+
+    let allowed = req.user.menuAccess || [];
+    if (!allowed.length) {
+      for (const role of req.user.roles) {
+        if (roleDefaults[role]) {
+          allowed = roleDefaults[role];
+          break;
+        }
+      }
+    }
+
+    const ok = sections.some((s) => allowed.includes(s));
+    if (!ok) {
+      return next(createError('Insufficient permissions', 403));
+    }
+
+    next();
+  };
+};
+
 export const authorize = (...permissionsRequired: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(createError('Authentication required', 401));
     }
 
-    const hasPermission = permissionsRequired.some(permission => 
-      req.user!.permissions.includes(permission) || 
+    // Admins always have full access
+    if (req.user.roles.includes('admin') || req.user.roles.includes('manager')) {
+      return next();
+    }
+
+    if (permissionsRequired.length === 0) {
+      return next();
+    }
+
+    const hasPermission = permissionsRequired.some(permission =>
+      req.user!.permissions.includes(permission) ||
       req.user!.permissions.includes('*')
     );
 

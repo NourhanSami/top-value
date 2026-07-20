@@ -13,7 +13,8 @@ const createUserSchema = z.object({
   phone: z.string().min(7).max(20).optional().or(z.literal('')),
   branchId: z.number().int().optional(),
   roleIds: z.array(z.number().int()).min(1, 'يجب تحديد صلاحية واحدة على الأقل'),
-  isActive: z.boolean().default(true)
+  isActive: z.boolean().default(true),
+  menuAccess: z.array(z.string()).optional(),
 });
 
 const updateUserSchema = z.object({
@@ -23,7 +24,8 @@ const updateUserSchema = z.object({
   phone: z.string().min(7).max(20).optional().or(z.literal('')),
   branchId: z.number().int().optional(),
   roleIds: z.array(z.number().int()).optional(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
+  menuAccess: z.array(z.string()).optional(),
 });
 
 /**
@@ -93,6 +95,7 @@ export const getAllUsers = async (req: Request, res: Response, next: NextFunctio
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
+          menuAccess: true,
           branch: {
             select: { id: true, name: true, code: true }
           },
@@ -122,6 +125,9 @@ export const getAllUsers = async (req: Request, res: Response, next: NextFunctio
       success: true,
       data: users.map(user => ({
         ...user,
+        menuAccess: user.menuAccess
+          ? (() => { try { return JSON.parse(user.menuAccess!); } catch { return []; } })()
+          : [],
         roles: user.roles.map(r => r.role)
       })),
       pagination: {
@@ -205,6 +211,7 @@ export const getUserById = async (req: Request, res: Response, next: NextFunctio
         branchId: true,
         avatar: true,
         isActive: true,
+        menuAccess: true,
         lastLoginAt: true,
         lastLoginIp: true,
         createdAt: true,
@@ -262,6 +269,7 @@ export const getUserById = async (req: Request, res: Response, next: NextFunctio
       success: true,
       data: {
         ...user,
+        menuAccess: user.menuAccess ? (() => { try { return JSON.parse(user.menuAccess); } catch { return []; } })() : [],
         roles: user.roles.map(r => ({
           ...r.role,
           permissions: r.role.permissions.map(p => p.permission)
@@ -303,12 +311,13 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
     const hashedPassword = await hashPassword(validatedData.password);
 
     // Create user with roles
-    const { roleIds, phone, ...userData } = validatedData;
+    const { roleIds, phone, menuAccess, ...userData } = validatedData;
 
     const user = await prisma.user.create({
       data: {
         ...userData,
         phone: phone || null,
+        menuAccess: menuAccess ? JSON.stringify(menuAccess) : null,
         password: hashedPassword,
         roles: {
           create: roleIds.map(roleId => ({ roleId }))
@@ -321,6 +330,7 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
         phone: true,
         branchId: true,
         isActive: true,
+        menuAccess: true,
         branch: {
           select: { id: true, name: true }
         },
@@ -339,6 +349,7 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
       message: 'تم إضافة المستخدم بنجاح',
       data: {
         ...user,
+        menuAccess: menuAccess || (user.menuAccess ? JSON.parse(user.menuAccess) : []),
         roles: user.roles.map(r => r.role)
       }
     });
@@ -390,12 +401,15 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
     }
 
     // Prepare update data
-    const { roleIds, password, ...updateData } = validatedData;
+    const { roleIds, password, menuAccess, ...updateData } = validatedData;
     const finalData: any = { ...updateData };
 
     // Hash password if provided
     if (password) {
       finalData.password = await hashPassword(password);
+    }
+    if (menuAccess !== undefined) {
+      finalData.menuAccess = menuAccess ? JSON.stringify(menuAccess) : null;
     }
 
     // Update user
@@ -409,6 +423,7 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
         phone: true,
         branchId: true,
         isActive: true,
+        menuAccess: true,
         branch: {
           select: { id: true, name: true }
         },
@@ -447,6 +462,7 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
           phone: true,
           branchId: true,
           isActive: true,
+          menuAccess: true,
           branch: {
             select: { id: true, name: true }
           },
@@ -465,6 +481,9 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
         message: 'تم تحديث بيانات المستخدم بنجاح',
         data: {
           ...updatedUser,
+          menuAccess: updatedUser?.menuAccess
+            ? (() => { try { return JSON.parse(updatedUser.menuAccess!); } catch { return []; } })()
+            : [],
           roles: updatedUser?.roles.map(r => r.role)
         }
       });
@@ -475,6 +494,9 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
       message: 'تم تحديث بيانات المستخدم بنجاح',
       data: {
         ...user,
+        menuAccess: user.menuAccess
+          ? (() => { try { return JSON.parse(user.menuAccess!); } catch { return []; } })()
+          : [],
         roles: user.roles.map(r => r.role)
       }
     });

@@ -96,6 +96,7 @@ model User {
   branchId      Int?      @map("branch_id")
   avatar        String?
   isActive      Boolean   @default(true) @map("is_active")
+  menuAccess    String?   @map("menu_access")
   lastLoginAt   DateTime? @map("last_login_at")
   lastLoginIp   String?   @map("last_login_ip") 
   rememberToken String?   @map("remember_token")

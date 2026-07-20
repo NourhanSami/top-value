@@ -4,6 +4,12 @@ import { Save, Loader2 } from "lucide-react"
 import BaseDialog from "./BaseDialog"
 import { userService, branchService } from "@/services/api.service"
 import toast from "react-hot-toast"
+import {
+  MENU_SECTIONS,
+  ROLE_DEFAULT_MENUS,
+  ALL_MENU_KEYS,
+  type MenuSectionKey,
+} from "@/lib/menuAccess"
 
 interface UserDialogProps {
   isOpen: boolean
@@ -22,6 +28,7 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
     branchId: "",
     roleId: "",
     isActive: true,
+    menuAccess: [] as MenuSectionKey[],
   })
 
   const { data: rolesRes } = useQuery({
@@ -44,12 +51,22 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
     enabled: mode === "edit" && !!userId && isOpen,
   })
 
+  const applyRoleDefaults = (roleId: string) => {
+    const role = roles.find((r) => String(r.id) === roleId)
+    const defaults = role?.name
+      ? ROLE_DEFAULT_MENUS[role.name] || [...ALL_MENU_KEYS]
+      : [...ALL_MENU_KEYS]
+    return defaults as MenuSectionKey[]
+  }
+
   useEffect(() => {
     if (!isOpen) return
     if (mode === "edit" && userResponse?.data) {
       const user = userResponse.data
       const roleList = user.roles || []
       const firstRole = roleList[0]?.role || roleList[0]
+      const savedMenus = Array.isArray(user.menuAccess) ? user.menuAccess : []
+      const roleName = firstRole?.name
       setFormData({
         name: user.name || "",
         email: user.email || "",
@@ -58,20 +75,28 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
         branchId: user.branchId ? String(user.branchId) : "",
         roleId: firstRole?.id ? String(firstRole.id) : "",
         isActive: user.isActive !== false,
+        menuAccess:
+          savedMenus.length > 0
+            ? savedMenus.filter((k: string) => ALL_MENU_KEYS.includes(k as MenuSectionKey))
+            : roleName && ROLE_DEFAULT_MENUS[roleName]
+              ? [...ROLE_DEFAULT_MENUS[roleName]]
+              : [...ALL_MENU_KEYS],
       })
     } else if (mode === "create") {
+      const defaultRole =
+        roles.find((r) => r.name === "employee") || roles[0]
+      const roleId = defaultRole ? String(defaultRole.id) : ""
       setFormData({
         name: "",
         email: "",
         password: "",
         phone: "",
         branchId: branches[0] ? String(branches[0].id) : "",
-        roleId: roles.find((r) => r.name === "employee")?.id
-          ? String(roles.find((r) => r.name === "employee").id)
-          : roles[0]
-            ? String(roles[0].id)
-            : "",
+        roleId,
         isActive: true,
+        menuAccess: defaultRole?.name && ROLE_DEFAULT_MENUS[defaultRole.name]
+          ? [...ROLE_DEFAULT_MENUS[defaultRole.name]]
+          : ["dashboard", "customers"],
       })
     }
   }, [isOpen, mode, userResponse, roles.length, branches.length])
@@ -87,11 +112,29 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
     onError: (e: any) => toast.error(e.response?.data?.message || "فشل الحفظ"),
   })
 
+  const toggleSection = (key: MenuSectionKey) => {
+    setFormData((prev) => ({
+      ...prev,
+      menuAccess: prev.menuAccess.includes(key)
+        ? prev.menuAccess.filter((k) => k !== key)
+        : [...prev.menuAccess, key],
+    }))
+  }
+
+  const handleRoleChange = (roleId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      roleId,
+      menuAccess: applyRoleDefaults(roleId),
+    }))
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim() || !formData.email.trim()) return toast.error("الاسم والبريد مطلوبان")
     if (mode === "create" && formData.password.length < 8) return toast.error("كلمة المرور 8 أحرف على الأقل")
     if (!formData.roleId) return toast.error("اختر الدور")
+    if (formData.menuAccess.length === 0) return toast.error("حدد قسماً واحداً على الأقل يظهر للمستخدم")
 
     const payload: any = {
       name: formData.name.trim(),
@@ -100,6 +143,7 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
       branchId: formData.branchId ? parseInt(formData.branchId) : undefined,
       roleIds: [parseInt(formData.roleId)],
       isActive: formData.isActive,
+      menuAccess: formData.menuAccess,
     }
     if (formData.password) payload.password = formData.password
 
@@ -159,7 +203,7 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
             <label className="block text-sm font-medium mb-1.5">الدور *</label>
             <select
               value={formData.roleId}
-              onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
+              onChange={(e) => handleRoleChange(e.target.value)}
               required
               className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-background"
             >
@@ -192,6 +236,48 @@ export default function UserDialog({ isOpen, onClose, userId, mode }: UserDialog
           />
           <span className="text-sm">حساب نشط</span>
         </label>
+
+        <div className="border border-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h3 className="text-sm font-semibold">أقسام القائمة الظاهرة للمستخدم *</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                حدد ما يظهر في الشريط الجانبي ولوحة التحكم بعد تسجيل الدخول
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData((p) => ({ ...p, menuAccess: [...ALL_MENU_KEYS] }))}
+                className="text-xs px-2 py-1 border rounded-lg hover:bg-muted"
+              >
+                تحديد الكل
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData((p) => ({ ...p, menuAccess: [] }))}
+                className="text-xs px-2 py-1 border rounded-lg hover:bg-muted"
+              >
+                إلغاء الكل
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+            {MENU_SECTIONS.map((section) => (
+              <label
+                key={section.key}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-muted/50 cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={formData.menuAccess.includes(section.key)}
+                  onChange={() => toggleSection(section.key)}
+                />
+                <span>{section.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
 
         <div className="flex justify-end gap-3 pt-4 border-t border-border">
           <button type="button" onClick={onClose} className="px-4 py-2 border rounded-xl text-sm">إلغاء</button>

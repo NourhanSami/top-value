@@ -30,7 +30,14 @@ export const getAllReturns = async (req: Request, res: Response, next: NextFunct
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const where: any = {};
-    if (search) where.returnNumber = { contains: search as string };
+    if (search) {
+      const q = (search as string).trim();
+      where.OR = [
+        { returnNumber: { contains: q } },
+        { sale: { invoiceNumber: { contains: q } } },
+        { reason: { contains: q } },
+      ];
+    }
     if (branchId) where.branchId = parseInt(branchId as string);
     if (dateFrom || dateTo) {
       where.returnDate = {};
@@ -75,6 +82,25 @@ export const createReturn = async (req: Request, res: Response, next: NextFuncti
     const result = await prisma.$transaction(async (tx) => {
       const sale = await tx.sale.findUnique({ where: { id: validated.saleId }, include: { items: true } });
       if (!sale) throw new Error('الفاتورة غير موجودة');
+
+      // Prevent returning more than sold (minus previously returned qty)
+      const previousReturns = await tx.saleReturnItem.findMany({
+        where: { saleReturn: { saleId: validated.saleId } },
+        select: { productId: true, quantity: true },
+      });
+      const alreadyReturned = new Map<number, number>();
+      for (const r of previousReturns) {
+        alreadyReturned.set(r.productId, (alreadyReturned.get(r.productId) || 0) + r.quantity);
+      }
+
+      for (const item of validated.items) {
+        const saleItem = sale.items.find(si => si.productId === item.productId);
+        if (!saleItem) throw new Error(`المنتج رقم ${item.productId} غير موجود في الفاتورة`);
+        const remaining = saleItem.quantity - (alreadyReturned.get(item.productId) || 0);
+        if (item.quantity > remaining) {
+          throw new Error(`الكمية المرتجعة للمنتج تتجاوز المتاح للإرجاع (${remaining})`);
+        }
+      }
 
       const returnNumber = await generateReturnNumber();
       const totalRefund = validated.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
@@ -151,6 +177,18 @@ export const getReturnStatistics = async (req: Request, res: Response, next: Nex
       prisma.saleReturn.aggregate({ where: { refundMethod: 'cash' }, _sum: { totalRefund: true } }),
       prisma.saleReturn.aggregate({ where: { refundMethod: 'credit' }, _sum: { totalRefund: true } }),
     ]);
-    res.json({ success: true, data: { total, total_amount: totalAmount._sum.totalRefund || 0, cash_refunds: cashRefunds._sum.totalRefund || 0, credit_refunds: creditRefunds._sum.totalRefund || 0 } });
+    res.json({
+      success: true,
+      data: {
+        total,
+        totalAmount: Number(totalAmount._sum.totalRefund || 0),
+        cashRefunds: Number(cashRefunds._sum.totalRefund || 0),
+        creditRefunds: Number(creditRefunds._sum.totalRefund || 0),
+        // snake_case aliases for older clients
+        total_amount: Number(totalAmount._sum.totalRefund || 0),
+        cash_refunds: Number(cashRefunds._sum.totalRefund || 0),
+        credit_refunds: Number(creditRefunds._sum.totalRefund || 0),
+      },
+    });
   } catch (error) { next(error); }
 };

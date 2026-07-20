@@ -465,8 +465,7 @@ export const createSale = async (req: Request, res: Response, next: NextFunction
           where: { id: validatedData.customerId },
           data: {
             loyaltyPoints: {
-              increment: loyaltyPointsEarned,
-              decrement: validatedData.loyaltyPointsUsed
+              increment: loyaltyPointsEarned - validatedData.loyaltyPointsUsed,
             }
           }
         });

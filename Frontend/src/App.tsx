@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "react-hot-toast"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
@@ -26,6 +26,7 @@ import BankAccountsPage from "./pages/BankAccountsPage"
 import InventoryTransfersPage from "./pages/InventoryTransfersPage"
 import ProfitLossReport from "./pages/ProfitLossReport"
 import CapitalSetup from "./pages/CapitalSetup"
+import { resolveMenuAccess, sectionForPath } from "./lib/menuAccess"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,7 +37,36 @@ const queryClient = new QueryClient({
   },
 })
 
-// Protected Routes Component
+function AccessGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  const location = useLocation()
+  const role = (user?.role || "").toLowerCase()
+  // Admin/manager always see all pages unless explicitly restricted later
+  if (role === "admin" || role === "manager" || role === "مدير") {
+    return <>{children}</>
+  }
+
+  const allowed = resolveMenuAccess(user?.menuAccess, user?.role)
+  const section = sectionForPath(location.pathname)
+
+  if (section && !allowed.includes(section)) {
+    const fallback = allowed.includes("dashboard")
+      ? "/"
+      : allowed.includes("pos")
+        ? "/pos"
+        : allowed.includes("customers")
+          ? "/customers"
+          : allowed.includes("sales")
+            ? "/sales"
+            : allowed.includes("returns")
+              ? "/returns"
+              : "/"
+    return <Navigate to={fallback} replace />
+  }
+
+  return <>{children}</>
+}
+
 function ProtectedRoutes() {
   const { user, isAuthenticated, logout } = useAuth()
 
@@ -44,19 +74,17 @@ function ProtectedRoutes() {
     return <Navigate to="/login" replace />
   }
 
-  // Convert user data to match MainLayout props
-  // Map English roles to Arabic for Sidebar
-  const roleMapping: Record<string, "مدير" | "موظف" | "محاسب" | "مندوب"> = {
-    "admin": "مدير",
-    "manager": "مدير",
-    "accountant": "محاسب",
-    "cashier": "مندوب",
-    "employee": "موظف"
+  const roleMapping: Record<string, string> = {
+    admin: "مدير",
+    manager: "مدير",
+    accountant: "محاسب",
+    cashier: "مندوب",
+    employee: "موظف",
   }
 
-  const arabicRole = roleMapping[user.role.toLowerCase()] || "مدير"
+  const arabicRole = roleMapping[user.role.toLowerCase()] || user.role
 
-  const mockUser = {
+  const layoutUser = {
     name: user.name,
     role: arabicRole,
     warehouse: user.branch_name || "الفرع الرئيسي",
@@ -64,7 +92,7 @@ function ProtectedRoutes() {
 
   return (
     <MainLayout
-      user={mockUser}
+      user={layoutUser}
       onLogout={() => {
         logout()
         window.location.href = "/login"
@@ -73,7 +101,6 @@ function ProtectedRoutes() {
   )
 }
 
-// App Routes Component
 function AppRoutes() {
   const { isAuthenticated, isLoading } = useAuth()
 
@@ -98,31 +125,31 @@ function AppRoutes() {
       />
 
       <Route element={<ProtectedRoutes />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/pos" element={<POS />} />
-        <Route path="/products" element={<Products />} />
-        <Route path="/sales" element={<Sales />} />
-        <Route path="/customers" element={<Customers />} />
-        <Route path="/suppliers" element={<Suppliers />} />
-        <Route path="/expenses" element={<Expenses />} />
-        <Route path="/purchase-orders" element={<PurchaseOrders />} />
-        <Route path="/purchase-invoices" element={<PurchaseOrders />} />
-        <Route path="/branches" element={<Branches />} />
-        <Route path="/warehouses" element={<Branches />} />
-        <Route path="/users" element={<Users />} />
+        <Route path="/" element={<AccessGuard><Dashboard /></AccessGuard>} />
+        <Route path="/pos" element={<AccessGuard><POS /></AccessGuard>} />
+        <Route path="/products" element={<AccessGuard><Products /></AccessGuard>} />
+        <Route path="/sales" element={<AccessGuard><Sales /></AccessGuard>} />
+        <Route path="/customers" element={<AccessGuard><Customers /></AccessGuard>} />
+        <Route path="/suppliers" element={<AccessGuard><Suppliers /></AccessGuard>} />
+        <Route path="/expenses" element={<AccessGuard><Expenses /></AccessGuard>} />
+        <Route path="/purchase-orders" element={<AccessGuard><PurchaseOrders /></AccessGuard>} />
+        <Route path="/purchase-invoices" element={<AccessGuard><PurchaseOrders /></AccessGuard>} />
+        <Route path="/branches" element={<AccessGuard><Branches /></AccessGuard>} />
+        <Route path="/warehouses" element={<AccessGuard><Branches /></AccessGuard>} />
+        <Route path="/users" element={<AccessGuard><Users /></AccessGuard>} />
         <Route path="/employees" element={<Navigate to="/users" replace />} />
-        <Route path="/returns" element={<Returns />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/damaged-items" element={<DamagedItems />} />
-        <Route path="/activity-logs" element={<ActivityLogs />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/capital-setup" element={<CapitalSetup />} />
-        <Route path="/quotations" element={<Quotations />} />
-        <Route path="/vouchers" element={<PaymentVouchers />} />
-        <Route path="/installments" element={<InstallmentsPage />} />
-        <Route path="/bank-accounts" element={<BankAccountsPage />} />
-        <Route path="/inventory-transfers" element={<InventoryTransfersPage />} />
-        <Route path="/profit-loss" element={<ProfitLossReport />} />
+        <Route path="/returns" element={<AccessGuard><Returns /></AccessGuard>} />
+        <Route path="/settings" element={<AccessGuard><Settings /></AccessGuard>} />
+        <Route path="/damaged-items" element={<AccessGuard><DamagedItems /></AccessGuard>} />
+        <Route path="/activity-logs" element={<AccessGuard><ActivityLogs /></AccessGuard>} />
+        <Route path="/reports" element={<AccessGuard><Reports /></AccessGuard>} />
+        <Route path="/capital-setup" element={<AccessGuard><CapitalSetup /></AccessGuard>} />
+        <Route path="/quotations" element={<AccessGuard><Quotations /></AccessGuard>} />
+        <Route path="/vouchers" element={<AccessGuard><PaymentVouchers /></AccessGuard>} />
+        <Route path="/installments" element={<AccessGuard><InstallmentsPage /></AccessGuard>} />
+        <Route path="/bank-accounts" element={<AccessGuard><BankAccountsPage /></AccessGuard>} />
+        <Route path="/inventory-transfers" element={<AccessGuard><InventoryTransfersPage /></AccessGuard>} />
+        <Route path="/profit-loss" element={<AccessGuard><ProfitLossReport /></AccessGuard>} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

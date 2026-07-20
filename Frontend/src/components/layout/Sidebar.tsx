@@ -22,7 +22,6 @@ import {
   Settings,
   LogOut,
   ChevronDown,
-  ArrowDownCircle,
   Calendar,
   Landmark,
   ArrowLeftRight,
@@ -30,17 +29,14 @@ import {
   Receipt,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-interface SidebarProps {
-  userRole?: string
-}
+import { resolveMenuAccess, type MenuSectionKey } from "@/lib/menuAccess"
 
 interface NavItem {
   label: string
   icon: React.ElementType
   path?: string
-  children?: NavItem[]
-  roles?: string[]
+  section: MenuSectionKey
+  children?: Omit<NavItem, "section">[]
 }
 
 const navigationItems: NavItem[] = [
@@ -48,59 +44,62 @@ const navigationItems: NavItem[] = [
     label: "لوحة التحكم",
     icon: LayoutDashboard,
     path: "/",
-    roles: ["مدير", "محاسب"],
+    section: "dashboard",
   },
   {
     label: "نقطة البيع",
     icon: ShoppingCart,
     path: "/pos",
-    roles: ["مدير", "مندوب"],
+    section: "pos",
   },
   {
     label: "المبيعات",
     icon: ShoppingBag,
     path: "/sales",
-    roles: ["مدير", "محاسب"],
+    section: "sales",
   },
   {
     label: "عروض الأسعار",
     icon: FileText,
     path: "/quotations",
-    roles: ["مدير", "محاسب"],
+    section: "quotations",
   },
   {
     label: "المرتجعات",
     icon: RotateCcw,
     path: "/returns",
+    section: "returns",
   },
   {
     label: "العملاء",
     icon: Users,
     path: "/customers",
+    section: "customers",
   },
   {
     label: "إدارة المخزون",
     icon: Package,
+    section: "inventory",
     children: [
       { label: "المنتجات", icon: Package, path: "/products" },
       { label: "المخازن", icon: Building2, path: "/warehouses" },
       { label: "الهوالك", icon: AlertTriangle, path: "/damaged-items" },
       { label: "تحويل المخزون", icon: ArrowLeftRight, path: "/inventory-transfers" },
     ],
-    roles: ["مدير", "محاسب"],
   },
   {
     label: "المشتريات",
     icon: FileText,
+    section: "purchases",
     children: [
       { label: "فواتير الشراء", icon: FileText, path: "/purchase-invoices" },
       { label: "الموردين", icon: Truck, path: "/suppliers" },
     ],
-    roles: ["مدير", "محاسب"],
   },
   {
     label: "المالية",
     icon: DollarSign,
+    section: "finance",
     children: [
       { label: "سندات القبض والدفع", icon: Receipt, path: "/vouchers" },
       { label: "الأقساط والديون", icon: Calendar, path: "/installments" },
@@ -108,53 +107,54 @@ const navigationItems: NavItem[] = [
       { label: "المصروفات", icon: DollarSign, path: "/expenses" },
       { label: "رأس المال", icon: Wallet, path: "/capital-setup" },
     ],
-    roles: ["مدير", "محاسب"],
   },
   {
     label: "التقارير",
     icon: BarChart3,
+    section: "reports",
     children: [
       { label: "التقارير العامة", icon: BarChart3, path: "/reports" },
       { label: "الأرباح والخسائر", icon: TrendingUp, path: "/profit-loss" },
     ],
-    roles: ["مدير", "محاسب"],
   },
   {
     label: "سجل النشاط",
     icon: ClipboardList,
     path: "/activity-logs",
-    roles: ["مدير", "محاسب"],
+    section: "activity",
   },
   {
     label: "الموارد البشرية",
     icon: UserCog,
+    section: "hr",
     children: [
       { label: "المستخدمين", icon: UsersRound, path: "/users" },
     ],
-    roles: ["مدير", "محاسب"],
   },
   {
     label: "الإعدادات",
     icon: Settings,
     path: "/settings",
-    roles: ["مدير", "محاسب"],
+    section: "settings",
   },
 ]
 
-export function Sidebar({ userRole = "مدير" }: SidebarProps) {
+export function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(false)
   const [openAccordion, setOpenAccordion] = useState<string | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
+
+  const allowed = resolveMenuAccess(user?.menuAccess, user?.role)
 
   const handleLogout = async () => {
     await logout()
     navigate("/login")
   }
 
-  const filteredItems = navigationItems.filter(
-    (item) => !item.roles || item.roles.includes(userRole)
+  const filteredItems = navigationItems.filter((item) =>
+    allowed.includes(item.section)
   )
 
   const handleAccordionToggle = (label: string) => {
@@ -173,7 +173,6 @@ export function Sidebar({ userRole = "مدير" }: SidebarProps) {
         setOpenAccordion(null)
       }}
     >
-      {/* Header */}
       <div className="h-16 flex items-center justify-center gap-3 border-b border-sidebar-border px-4">
         <div className="w-10 h-10 bg-sidebar-accent rounded-xl flex items-center justify-center flex-shrink-0">
           <Warehouse className="w-6 h-6 text-sidebar-foreground" />
@@ -186,7 +185,6 @@ export function Sidebar({ userRole = "مدير" }: SidebarProps) {
         )}
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">
         {filteredItems.map((item) =>
           item.children ? (
@@ -197,7 +195,6 @@ export function Sidebar({ userRole = "مدير" }: SidebarProps) {
               isOpen={openAccordion === item.label}
               onToggle={() => handleAccordionToggle(item.label)}
               currentPath={location.pathname}
-              userRole={userRole}
             />
           ) : (
             <NavItemLink
@@ -210,7 +207,6 @@ export function Sidebar({ userRole = "مدير" }: SidebarProps) {
         )}
       </nav>
 
-      {/* Footer */}
       <div className="p-4 border-t border-sidebar-border">
         <button
           onClick={handleLogout}
@@ -256,7 +252,6 @@ interface NavItemWithChildrenProps {
   isOpen: boolean
   onToggle: () => void
   currentPath: string
-  userRole: string
 }
 
 function NavItemWithChildren({
@@ -265,12 +260,8 @@ function NavItemWithChildren({
   isOpen,
   onToggle,
   currentPath,
-  userRole,
 }: NavItemWithChildrenProps) {
   const Icon = item.icon
-  const filteredChildren = item.children?.filter(
-    (child) => !child.roles || child.roles.includes(userRole)
-  )
 
   return (
     <div className="mb-1">
@@ -296,7 +287,7 @@ function NavItemWithChildren({
 
       {isExpanded && isOpen && (
         <div className="ml-4 mt-1 space-y-1 animate-accordion-down">
-          {filteredChildren?.map((child) => (
+          {item.children?.map((child) => (
             <Link
               key={child.label}
               to={child.path || "#"}

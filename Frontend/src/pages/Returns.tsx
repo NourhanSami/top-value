@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Search, Plus, RotateCcw, DollarSign, Package, Calendar, Eye, X, Loader2, CheckCircle,
@@ -42,6 +42,7 @@ interface Sale {
   id: number
   invoiceNumber: string
   totalAmount: number
+  branchId?: number
   items: Array<{
     id: number
     productId: number
@@ -65,6 +66,7 @@ const salesApi = {
 export default function Returns() {
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [showDialog, setShowDialog] = useState(false)
   const [viewReturn, setViewReturn] = useState<SaleReturn | null>(null)
@@ -78,14 +80,21 @@ export default function Returns() {
   const [refundMethod, setRefundMethod] = useState<"cash" | "credit">("cash")
   const [notes, setNotes] = useState("")
 
-  const { data: returnsResponse, isLoading } = useQuery({
-    queryKey: ["returns", searchTerm, currentPage],
-    queryFn: () => returnsApi.getAll({ search: searchTerm || undefined, page: currentPage, limit: 20 }),
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  const { data: returnsResponse, isLoading, isError: returnsError, error: returnsErr } = useQuery({
+    queryKey: ["returns", debouncedSearch, currentPage],
+    queryFn: () => returnsApi.getAll({ search: debouncedSearch || undefined, page: currentPage, limit: 20 }),
+    retry: 1,
   })
 
-  const { data: statsResponse } = useQuery({
+  const { data: statsResponse, isError: statsError } = useQuery({
     queryKey: ["returns", "statistics"],
     queryFn: returnsApi.getStats,
+    retry: 1,
   })
 
   const createMutation = useMutation({
@@ -93,6 +102,7 @@ export default function Returns() {
     onSuccess: () => {
       toast.success("تم إنشاء المرتجع وتحديث المخزون بنجاح")
       queryClient.invalidateQueries({ queryKey: ["returns"] })
+      queryClient.invalidateQueries({ queryKey: ["returns", "statistics"] })
       queryClient.invalidateQueries({ queryKey: ["products"] })
       resetDialog()
     },
@@ -140,26 +150,77 @@ export default function Returns() {
     if (!items.length) return toast.error("حدد منتجاً واحداً على الأقل بكمية أكبر من صفر")
     createMutation.mutate({
       saleId: foundSale.id,
-      branchId: 1,
-      reason,
+      branchId: foundSale.branchId || 1,
+      reason: reason.trim(),
       refundMethod,
-      notes,
+      notes: notes.trim() || undefined,
       items: items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
     })
   }
 
-  const returns = returnsResponse?.data || []
-  const stats = statsResponse?.data
+  const returns = Array.isArray(returnsResponse?.data) ? returnsResponse.data : []
+  const rawStats = (statsResponse && typeof statsResponse === "object" && "data" in statsResponse)
+    ? (statsResponse as any).data
+    : statsResponse
   const pagination = returnsResponse?.pagination
+
+  // Dynamic stats from API (with list fallback if stats request fails)
+  const stats = {
+    total: Number(rawStats?.total ?? pagination?.total ?? returns.length ?? 0),
+    totalAmount: Number(rawStats?.totalAmount ?? rawStats?.total_amount ?? 0),
+    cashRefunds: Number(rawStats?.cashRefunds ?? rawStats?.cash_refunds ?? 0),
+    creditRefunds: Number(rawStats?.creditRefunds ?? rawStats?.credit_refunds ?? 0),
+  }
+
+  // If stats endpoint failed, derive amounts from currently loaded returns
+  if (statsError || (!rawStats && returns.length > 0)) {
+    stats.total = Number(pagination?.total ?? returns.length)
+    stats.totalAmount = returns.reduce((s: number, r: SaleReturn) => s + Number(r.totalRefund || 0), 0)
+    stats.cashRefunds = returns
+      .filter((r: SaleReturn) => r.refundMethod === "cash")
+      .reduce((s: number, r: SaleReturn) => s + Number(r.totalRefund || 0), 0)
+    stats.creditRefunds = returns
+      .filter((r: SaleReturn) => r.refundMethod === "credit")
+      .reduce((s: number, r: SaleReturn) => s + Number(r.totalRefund || 0), 0)
+  }
 
   return (
     <div className="space-y-6">
+      {returnsError && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {(returnsErr as any)?.response?.data?.message || "تعذر تحميل المرتجعات. سجّل الخروج ثم الدخول مجدداً."}
+        </div>
+      )}
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard title="إجمالي المرتجعات" value={stats?.total || 0} icon={RotateCcw} change={{ value: 0, label: "مرتجع" }} />
-        <StatCard title="إجمالي المبالغ المستردة" value={formatCurrency(Number(stats?.total_amount || 0))} icon={DollarSign} change={{ value: 0, label: "ر.س" }} />
-        <StatCard title="استرداد نقدي" value={formatCurrency(Number(stats?.cash_refunds || 0))} icon={Package} change={{ value: 0, label: "نقدي" }} />
-        <StatCard title="استرداد رصيد" value={formatCurrency(Number(stats?.credit_refunds || 0))} icon={Calendar} change={{ value: 0, label: "رصيد" }} />
+        <StatCard
+          title="إجمالي المرتجعات"
+          value={stats.total}
+          icon={RotateCcw}
+          variant="primary"
+          subtitle={`${stats.total} مرتجع مسجل`}
+        />
+        <StatCard
+          title="إجمالي المبالغ المستردة"
+          value={formatCurrency(stats.totalAmount)}
+          icon={DollarSign}
+          variant="destructive"
+          subtitle="كل طرق الاسترداد"
+        />
+        <StatCard
+          title="استرداد نقدي"
+          value={formatCurrency(stats.cashRefunds)}
+          icon={Package}
+          variant="success"
+          subtitle="نقداً للعميل"
+        />
+        <StatCard
+          title="استرداد رصيد"
+          value={formatCurrency(stats.creditRefunds)}
+          icon={Calendar}
+          variant="info"
+          subtitle="إضافة لرصيد العميل"
+        />
       </div>
 
       {/* Header + Actions */}
@@ -183,7 +244,7 @@ export default function Returns() {
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="بحث برقم المرتجع..."
+            placeholder="بحث برقم المرتجع أو الفاتورة أو السبب..."
             value={searchTerm}
             onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1) }}
             className="w-full pr-10 pl-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"

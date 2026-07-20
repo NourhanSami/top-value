@@ -85,6 +85,23 @@ export const login = async (
       .map(rp => rp.permission.name)
       .filter((value, index, self) => self.indexOf(value) === index);
 
+    let menuAccess: string[] = [];
+    if (user.menuAccess) {
+      try { menuAccess = JSON.parse(user.menuAccess); } catch { menuAccess = []; }
+    }
+    // Fall back to role-based defaults so the sidebar isn't empty on first login
+    if (!menuAccess.length) {
+      const roleName = user.roles[0]?.role.name || 'employee';
+      const defaults: Record<string, string[]> = {
+        admin: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','hr','settings'],
+        manager: ['dashboard','pos','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
+        cashier: ['pos','sales','returns','customers'],
+        employee: ['returns','customers'],
+        accountant: ['dashboard','sales','quotations','returns','customers','inventory','purchases','finance','reports','activity','settings'],
+      };
+      menuAccess = defaults[roleName] || ['dashboard','customers','returns'];
+    }
+
     // Send response
     res.json({
       success: true,
@@ -99,7 +116,8 @@ export const login = async (
           role: user.roles[0]?.role.name || 'employee',
           branch_id: user.branchId,
           branch_name: user.branch?.name,
-          permissions
+          permissions,
+          menuAccess,
         },
         token: tokens.accessToken,
         refreshToken: tokens.refreshToken,
