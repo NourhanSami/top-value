@@ -206,41 +206,66 @@ export const getDashboardStatistics = async (req: Request, res: Response, next: 
  */
 export const getChartData = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { period = 'week', branchId } = req.query;
+    const { period = 'week', branchId, dateFrom, dateTo } = req.query;
 
     const now = new Date();
     now.setHours(23, 59, 59, 999);
     let startDate: Date;
+    let endDate = now;
     let groupBy: 'day' | 'month' = 'day';
 
-    switch (period) {
-      case 'week':
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-        groupBy = 'day';
-        break;
-      case 'month':
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 29);
-        startDate.setHours(0, 0, 0, 0);
-        groupBy = 'day';
-        break;
-      case 'year':
-        startDate = new Date(now);
-        startDate.setFullYear(startDate.getFullYear() - 1);
-        startDate.setHours(0, 0, 0, 0);
-        groupBy = 'month';
-        break;
-      default:
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-        groupBy = 'day';
+    if (dateFrom || dateTo || period === 'custom') {
+      startDate = dateFrom
+        ? new Date(dateFrom as string)
+        : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+      startDate.setHours(0, 0, 0, 0);
+      if (dateTo) {
+        endDate = new Date(dateTo as string);
+        endDate.setHours(23, 59, 59, 999);
+      }
+      const daySpan = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+      groupBy = daySpan > 90 ? 'month' : 'day';
+    } else {
+      switch (period) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          groupBy = 'day';
+          break;
+        case 'yesterday': {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          endDate.setMilliseconds(-1);
+          groupBy = 'day';
+          break;
+        }
+        case 'week':
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 6);
+          startDate.setHours(0, 0, 0, 0);
+          groupBy = 'day';
+          break;
+        case 'month':
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 29);
+          startDate.setHours(0, 0, 0, 0);
+          groupBy = 'day';
+          break;
+        case 'year':
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          startDate.setHours(0, 0, 0, 0);
+          groupBy = 'month';
+          break;
+        default:
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 6);
+          startDate.setHours(0, 0, 0, 0);
+          groupBy = 'day';
+      }
     }
 
     const where: any = {
-      saleDate: { gte: startDate, lte: now },
+      saleDate: { gte: startDate, lte: endDate },
       status: 'completed',
       deletedAt: null,
       ...(branchId && { branchId: parseInt(branchId as string) })
@@ -264,7 +289,7 @@ export const getChartData = async (req: Request, res: Response, next: NextFuncti
     const chartData: { date: string; amount: number }[] = [];
     if (groupBy === 'month') {
       const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-      const endMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
       while (cursor <= endMonth) {
         const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
         chartData.push({ date: key, amount: salesByKey.get(key) || 0 });
@@ -272,7 +297,7 @@ export const getChartData = async (req: Request, res: Response, next: NextFuncti
       }
     } else {
       const cursor = new Date(startDate);
-      while (cursor <= now) {
+      while (cursor <= endDate) {
         const key = cursor.toISOString().split('T')[0];
         chartData.push({ date: key, amount: salesByKey.get(key) || 0 });
         cursor.setDate(cursor.getDate() + 1);
@@ -281,7 +306,12 @@ export const getChartData = async (req: Request, res: Response, next: NextFuncti
 
     res.json({
       success: true,
-      data: { period, chartData }
+      data: {
+        period,
+        dateFrom: startDate.toISOString(),
+        dateTo: endDate.toISOString(),
+        chartData,
+      }
     });
   } catch (error) {
     next(error);

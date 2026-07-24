@@ -74,10 +74,14 @@ export const getAllExpenses = async (req: Request, res: Response, next: NextFunc
     if (dateFrom || dateTo) {
       where.expenseDate = {};
       if (dateFrom) {
-        where.expenseDate.gte = new Date(dateFrom as string);
+        const from = new Date(dateFrom as string);
+        from.setHours(0, 0, 0, 0);
+        where.expenseDate.gte = from;
       }
       if (dateTo) {
-        where.expenseDate.lte = new Date(dateTo as string);
+        const to = new Date(dateTo as string);
+        to.setHours(23, 59, 59, 999);
+        where.expenseDate.lte = to;
       }
     }
 
@@ -137,36 +141,57 @@ export const getAllExpenses = async (req: Request, res: Response, next: NextFunc
  */
 export const getExpenseStatistics = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { period = 'month', branchId, categoryId } = req.query;
+    const { period = 'month', branchId, categoryId, dateFrom, dateTo } = req.query;
 
     const now = new Date();
     let startDate: Date;
+    let endDate: Date | undefined;
 
-    switch (period) {
-      case 'today': {
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
+    if (dateFrom || dateTo || period === 'custom') {
+      startDate = dateFrom
+        ? new Date(dateFrom as string)
+        : new Date(now.getFullYear(), now.getMonth(), 1);
+      startDate.setHours(0, 0, 0, 0);
+      if (dateTo) {
+        endDate = new Date(dateTo as string);
+        endDate.setHours(23, 59, 59, 999);
+      } else {
+        endDate = new Date(now);
+        endDate.setHours(23, 59, 59, 999);
       }
-      case 'week': {
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 7);
-        break;
-      }
-      case 'month': {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      }
-      case 'year': {
-        startDate = new Date(now.getFullYear(), 0, 1);
-        break;
-      }
-      default: {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+      switch (period) {
+        case 'today': {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        }
+        case 'yesterday': {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          endDate.setMilliseconds(-1);
+          break;
+        }
+        case 'week': {
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 7);
+          break;
+        }
+        case 'month': {
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        }
+        case 'year': {
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        }
+        default: {
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        }
       }
     }
 
     const where: any = {
-      expenseDate: { gte: startDate },
+      expenseDate: endDate ? { gte: startDate, lte: endDate } : { gte: startDate },
       deletedAt: null
     };
 
